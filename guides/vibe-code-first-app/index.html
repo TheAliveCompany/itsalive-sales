@@ -39,10 +39,25 @@
     <h2>What You'll Need</h2>
     <ul>
       <li><a href="https://claude.ai/download" target="_blank">Claude Code</a> installed on your computer</li>
-      <li>Node.js (for running npx commands)</li>
+      <li>Node.js installed (see below)</li>
       <li>A terminal/command line</li>
       <li>An idea for what you want to build</li>
     </ul>
+
+    <h3>Installing Node.js</h3>
+    <p>Node.js lets you run JavaScript tools like our deployment CLI. Here's how to install it:</p>
+    <p><strong>Mac:</strong> Open Terminal and run:</p>
+    <pre><code>brew install node</code></pre>
+    <p>Don't have Homebrew? Install it first from <a href="https://brew.sh" target="_blank">brew.sh</a>, or download Node directly from <a href="https://nodejs.org" target="_blank">nodejs.org</a>.</p>
+    <p><strong>Windows:</strong> Download the installer from <a href="https://nodejs.org" target="_blank">nodejs.org</a> and run it.</p>
+    <p><strong>Linux:</strong> Use your package manager:</p>
+    <pre><code># Ubuntu/Debian
+sudo apt install nodejs npm
+
+# Or use nvm (recommended)
+curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.0/install.sh | bash
+nvm install node</code></pre>
+    <p>Verify it's installed by running <code>node --version</code> in your terminal.</p>
 
     <h2>Step 1: Set Up Your Project</h2>
     <p>Create a new folder and initialize it with itsalive:</p>
