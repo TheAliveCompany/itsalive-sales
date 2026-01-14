@@ -16,4 +16,4 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: e0225fb0aff3a38f75213d5fa53fd49f
-          command: pages deploy . --project-name itsalive-landing
+          command: pages deploy . --project-name itsalive-landing --branch main
