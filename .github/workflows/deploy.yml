@@ -11,7 +11,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ github.ref }}
           fetch-depth: 0
+
+      - name: Setup git branch
+        run: |
+          git checkout main || git checkout -b main
+          git branch
 
       - name: Deploy to Cloudflare Pages
         env:
@@ -19,8 +25,4 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: e0225fb0aff3a38f75213d5fa53fd49f
         run: |
           rm -rf .github
-          git config user.email "deploy@itsalive.co"
-          git config user.name "Deploy Bot"
-          git branch -D main 2>/dev/null || true
-          git checkout -b main
           npx wrangler pages deploy . --project-name itsalive-landing --commit-dirty=true
