@@ -10,13 +10,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: main
 
       - name: Deploy to Cloudflare Pages
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: e0225fb0aff3a38f75213d5fa53fd49f
         run: |
-          git checkout -b main 2>/dev/null || git checkout main
+          rm -rf .git
           npx wrangler pages deploy . --project-name itsalive-landing --branch main
