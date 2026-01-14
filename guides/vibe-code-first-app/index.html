@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>How to Vibe Code Your First Web App with Claude Code - itsalive.co</title>
+  <meta name="description" content="Learn how to build and deploy your first web app using Claude Code and itsalive.co. Go from idea to live app in minutes with AI-powered development.">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <nav>
+    <a href="/" class="nav-logo">itsalive.co</a>
+    <div class="nav-links">
+      <a href="/how-it-works/">How it Works</a>
+      <a href="/guides/">Guides</a>
+      <a href="/support/">Support</a>
+      <a href="https://itsalive.co/dashboard" class="nav-btn">Login</a>
+    </div>
+  </nav>
+
+  <div class="page-header">
+    <h1>How to Vibe Code Your First Web App</h1>
+    <p class="subtitle">Build and deploy with Claude Code in minutes</p>
+  </div>
+
+  <article class="guide-article">
+    <p>Vibe coding is a new way to build software. Instead of writing every line yourself, you describe what you want and let AI do the heavy lifting. This guide will show you how to vibe code your first web app using Claude Code and deploy it instantly with itsalive.co.</p>
+
+    <h2>What is Vibe Coding?</h2>
+    <p>Vibe coding means describing what you want in plain English and letting an AI assistant write the code. You focus on the <em>what</em>, not the <em>how</em>. It's like having a skilled developer who can read your mind.</p>
+    <p>With Claude Code, you can:</p>
+    <ul>
+      <li>Describe features in natural language</li>
+      <li>Iterate quickly by asking for changes</li>
+      <li>Build complete apps without deep coding knowledge</li>
+      <li>Learn by seeing how Claude implements your ideas</li>
+    </ul>
+
+    <h2>What You'll Need</h2>
+    <ul>
+      <li><a href="https://claude.ai/download" target="_blank">Claude Code</a> installed on your computer</li>
+      <li>Node.js (for running npx commands)</li>
+      <li>A terminal/command line</li>
+      <li>An idea for what you want to build</li>
+    </ul>
+
+    <h2>Step 1: Set Up Your Project</h2>
+    <p>Create a new folder and initialize it with itsalive:</p>
+    <pre><code>mkdir my-first-app
+cd my-first-app
+npx itsalive-co</code></pre>
+    <p>Pick a subdomain and verify your email. This sets up your deployment pipeline - every time you run <code>npx itsalive-co</code>, your app goes live.</p>
+
+    <h2>Step 2: Start Claude Code</h2>
+    <p>Open Claude Code in your project folder:</p>
+    <pre><code>claude</code></pre>
+    <p>You're now in a conversation with Claude. It can see your files and create new ones.</p>
+
+    <h2>Step 3: Describe What You Want</h2>
+    <p>Tell Claude what to build. Be specific about what you want, but don't worry about <em>how</em> to build it. Here are some example prompts:</p>
+
+    <h3>A Personal Portfolio</h3>
+    <pre><code>> Build me a personal portfolio website. I want a hero section
+> with my name "Alex Chen" and tagline "Full-stack developer".
+> Add sections for my projects and a contact form. Make it
+> dark mode with a modern, minimal design.</code></pre>
+
+    <h3>A Todo App</h3>
+    <pre><code>> Create a todo app where I can add tasks, mark them complete,
+> and delete them. Save the tasks to the database so they
+> persist when I refresh. Use a clean, simple design.</code></pre>
+
+    <h3>A Recipe Collection</h3>
+    <pre><code>> Build a recipe collection app. I want to be able to add
+> recipes with a title, ingredients list, and instructions.
+> Let me browse all my recipes and search by ingredient.
+> Make it look like a cozy cookbook.</code></pre>
+
+    <h2>Step 4: Watch Claude Work</h2>
+    <p>Claude will create the HTML, CSS, and JavaScript files for your app. It knows about itsalive.co's built-in features:</p>
+    <ul>
+      <li><strong>Database:</strong> <code>/_db/</code> endpoints for storing data</li>
+      <li><strong>Authentication:</strong> <code>/_auth/</code> endpoints for user login</li>
+      <li><strong>AI:</strong> <code>/_ai/</code> endpoints for Claude/GPT</li>
+    </ul>
+    <p>You'll see files appear in your project as Claude writes them.</p>
+
+    <h2>Step 5: Deploy</h2>
+    <p>Once Claude finishes, deploy your app:</p>
+    <pre><code>npx itsalive-co</code></pre>
+    <p>In seconds, you'll get a live URL. Open it in your browser and see your app running!</p>
+
+    <h2>Step 6: Iterate</h2>
+    <p>Your app is live, but maybe you want changes. Just tell Claude:</p>
+    <pre><code>> Change the background color to dark blue
+> Add a button to export my data
+> Make the fonts bigger on mobile
+> Add a loading spinner when saving</code></pre>
+    <p>Then deploy again:</p>
+    <pre><code>npx itsalive-co</code></pre>
+    <p>This is the vibe coding loop: describe → deploy → refine → repeat.</p>
+
+    <h2>Tips for Better Results</h2>
+
+    <h3>Be Specific</h3>
+    <p>Instead of "make it look good", try "use a dark background with purple accents and rounded corners on the cards".</p>
+
+    <h3>Describe the Experience</h3>
+    <p>Tell Claude how users should interact: "when I click a task, it should expand to show details" or "the form should shake if there's an error".</p>
+
+    <h3>Reference What Exists</h3>
+    <p>If you want changes, reference what's already there: "make the header sticky" or "add a delete button next to each item".</p>
+
+    <h3>Ask for Explanations</h3>
+    <p>Want to learn? Ask Claude to explain: "explain how the database saving works" or "why did you use flexbox here?"</p>
+
+    <h2>Example: Building a Habit Tracker</h2>
+    <p>Here's a complete example session:</p>
+    <pre><code>$ mkdir habits && cd habits
+$ npx itsalive-co
+? Subdomain: my-habits
+? Email: me@example.com
+✔ Verified!
+
+$ claude
+> Build me a habit tracker. I want to:
+> - Add habits with a name and target frequency (daily/weekly)
+> - Check off habits each day
+> - See a streak counter for each habit
+> - View a weekly summary
+> Save everything to the database. Make it motivating
+> with nice colors and maybe some confetti when I
+> complete all habits for the day.
+
+Claude creates index.html, styles.css, app.js...
+
+> This is great! Can you add a dark mode toggle?
+
+Claude updates the files...
+
+$ npx itsalive-co
+✔ Uploaded 3 files
+✨ https://my-habits.itsalive.co</code></pre>
+
+    <h2>What's Next?</h2>
+    <p>Now that you've built your first app, explore more:</p>
+    <ul>
+      <li><a href="/guides/authentication/">Add user accounts</a> so everyone gets their own data</li>
+      <li><a href="/guides/add-database/">Learn more about the database</a></li>
+      <li><a href="/guides/custom-domains/">Add a custom domain</a> for a professional URL</li>
+    </ul>
+
+    <p>Happy vibing!</p>
+  </article>
+
+  <footer>
+    <p>Built for vibe coders everywhere</p>
+  </footer>
+</body>
+</html>
