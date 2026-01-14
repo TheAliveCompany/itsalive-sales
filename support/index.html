@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Support - itsalive.co</title>
+  <meta name="description" content="Get help with itsalive.co - email support, community, and documentation.">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <nav>
+    <a href="/" class="nav-logo">itsalive.co</a>
+    <div class="nav-links">
+      <a href="/how-it-works/">How it Works</a>
+      <a href="/guides/">Guides</a>
+      <a href="/support/">Support</a>
+      <a href="https://itsalive.co/dashboard" class="nav-btn">Login</a>
+    </div>
+  </nav>
+
+  <div class="page-header">
+    <h1>Support</h1>
+    <p class="subtitle">We're here to help you ship</p>
+  </div>
+
+  <div class="support-options">
+    <div class="support-card">
+      <div class="support-icon">📧</div>
+      <h3>Email Support</h3>
+      <p>Have a question or need help? Our team responds within 24 hours.</p>
+      <a href="mailto:support@itsalive.co" class="support-link">support@itsalive.co</a>
+    </div>
+    <div class="support-card">
+      <div class="support-icon">💬</div>
+      <h3>Community</h3>
+      <p>Join other vibe coders. Share what you're building, get feedback, find collaborators.</p>
+      <a href="https://discord.gg/itsalive" class="support-link" target="_blank">Join Discord</a>
+    </div>
+    <div class="support-card">
+      <div class="support-icon">📖</div>
+      <h3>Guides</h3>
+      <p>Step-by-step tutorials for common tasks. From getting started to advanced features.</p>
+      <a href="/guides/" class="support-link">Browse Guides</a>
+    </div>
+  </div>
+
+  <section class="features" style="padding:4rem 2rem;">
+    <h2>Frequently Asked Questions</h2>
+    <p class="subtitle">Quick answers to common questions</p>
+    <div style="max-width:800px; margin:3rem auto 0; text-align:left;">
+      <div class="feature" style="text-align:left; margin-bottom:1.5rem;">
+        <h3 style="margin-bottom:0.75rem;">How do I deploy my first app?</h3>
+        <p>Run <code style="background:rgba(255,255,255,0.1); padding:0.2rem 0.5rem; border-radius:4px;">npx itsalive-co</code> in your project folder. Pick a subdomain, verify your email, and you're live. The whole process takes about 10 seconds.</p>
+      </div>
+      <div class="feature" style="text-align:left; margin-bottom:1.5rem;">
+        <h3 style="margin-bottom:0.75rem;">What files get deployed?</h3>
+        <p>Everything in your current directory (except node_modules, .git, and other common ignore patterns). Your index.html becomes your homepage, and all other files are available at their relative paths.</p>
+      </div>
+      <div class="feature" style="text-align:left; margin-bottom:1.5rem;">
+        <h3 style="margin-bottom:0.75rem;">How do I add authentication?</h3>
+        <p>Call our login API from your frontend. We handle the magic link emails, verification, and session management. Check out the <a href="/guides/authentication/" style="color:#00d4ff;">Authentication Guide</a> for details.</p>
+      </div>
+      <div class="feature" style="text-align:left; margin-bottom:1.5rem;">
+        <h3 style="margin-bottom:0.75rem;">Is there a free tier?</h3>
+        <p>Yes! The free tier includes up to 10 sites, auth, database, hosting, 100 emails per day, and 10,000 visitors per month. Pay-as-you-go for AI API usage.</p>
+      </div>
+      <div class="feature" style="text-align:left; margin-bottom:1.5rem;">
+        <h3 style="margin-bottom:0.75rem;">Can I use my own domain?</h3>
+        <p>Custom domains are available on the Pro plan ($50/year per site). Point your domain's DNS to us and add it in your dashboard.</p>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <p>Built for vibe coders everywhere</p>
+  </footer>
+</body>
+</html>

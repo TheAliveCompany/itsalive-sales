@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>How Do I Add a Database to My Vibe Code App? - itsalive.co</title>
+  <meta name="description" content="Learn how to add a database to your vibe code app with itsalive.co. Store and retrieve data with simple API calls - no SQL or configuration needed.">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <nav>
+    <a href="/" class="nav-logo">itsalive.co</a>
+    <div class="nav-links">
+      <a href="/how-it-works/">How it Works</a>
+      <a href="/guides/">Guides</a>
+      <a href="/support/">Support</a>
+      <a href="https://itsalive.co/dashboard" class="nav-btn">Login</a>
+    </div>
+  </nav>
+
+  <div class="page-header">
+    <h1>How Do I Add a Database to My Vibe Code App?</h1>
+    <p class="subtitle">Store and retrieve data with simple API calls</p>
+  </div>
+
+  <article class="guide-article">
+    <p>Building an app with Claude Code or another AI assistant? You'll probably need to store data at some point - user preferences, content, application state. With itsalive.co, adding a database is as simple as making a fetch call.</p>
+
+    <h2>No Setup Required</h2>
+    <p>Unlike traditional databases, there's nothing to configure. No connection strings, no schemas, no migrations. Just start saving and retrieving data.</p>
+
+    <h2>Saving Data</h2>
+    <p>Use the <code>/_db/</code> endpoint to store any JSON data under a key:</p>
+    <pre><code>// Save data for the current user
+await fetch('/_db/user-preferences', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    theme: 'dark',
+    notifications: true,
+    language: 'en'
+  })
+});</code></pre>
+
+    <h2>Retrieving Data</h2>
+    <p>Fetch your data back with a GET request:</p>
+    <pre><code>const response = await fetch('/_db/user-preferences');
+const data = await response.json();
+console.log(data.theme); // 'dark'</code></pre>
+
+    <h2>Data Scoping</h2>
+    <p>Data is automatically scoped to the logged-in user. This means:</p>
+    <ul>
+      <li>User A's "preferences" key is separate from User B's</li>
+      <li>Users can only access their own data</li>
+      <li>No authentication code needed - it's handled for you</li>
+    </ul>
+
+    <h2>Public vs Private Data</h2>
+    <p>By default, data is private to each user. For public data (like blog posts or products), use the public prefix:</p>
+    <pre><code>// Save public data (anyone can read)
+await fetch('/_db/public/blog-posts', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify([
+    { title: 'My First Post', content: '...' },
+    { title: 'Another Post', content: '...' }
+  ])
+});</code></pre>
+
+    <h2>Listing Keys</h2>
+    <p>Need to see what keys exist? List them:</p>
+    <pre><code>const response = await fetch('/_db/');
+const keys = await response.json();
+// ['user-preferences', 'saved-items', 'draft-content']</code></pre>
+
+    <h2>Deleting Data</h2>
+    <p>Remove data with a DELETE request:</p>
+    <pre><code>await fetch('/_db/old-data', {
+  method: 'DELETE'
+});</code></pre>
+
+    <h2>Complete Example</h2>
+    <p>Here's a simple todo app that persists data:</p>
+    <pre><code>&lt;!DOCTYPE html&gt;
+&lt;html&gt;
+&lt;head&gt;
+  &lt;title&gt;My Todos&lt;/title&gt;
+&lt;/head&gt;
+&lt;body&gt;
+  &lt;h1&gt;My Todos&lt;/h1&gt;
+  &lt;input type="text" id="newTodo" placeholder="Add a todo..."&gt;
+  &lt;button onclick="addTodo()"&gt;Add&lt;/button&gt;
+  &lt;ul id="todoList"&gt;&lt;/ul&gt;
+
+  &lt;script&gt;
+    let todos = [];
+
+    // Load todos on page load
+    async function loadTodos() {
+      const res = await fetch('/_db/todos');
+      if (res.ok) {
+        todos = await res.json();
+        render();
+      }
+    }
+
+    // Save todos to database
+    async function saveTodos() {
+      await fetch('/_db/todos', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(todos)
+      });
+    }
+
+    function addTodo() {
+      const input = document.getElementById('newTodo');
+      if (input.value.trim()) {
+        todos.push({ text: input.value, done: false });
+        input.value = '';
+        saveTodos();
+        render();
+      }
+    }
+
+    function render() {
+      const list = document.getElementById('todoList');
+      list.innerHTML = todos.map((t, i) =&gt;
+        `&lt;li&gt;${t.text}&lt;/li&gt;`
+      ).join('');
+    }
+
+    loadTodos();
+  &lt;/script&gt;
+&lt;/body&gt;
+&lt;/html&gt;</code></pre>
+
+    <h2>Tips</h2>
+    <ul>
+      <li><strong>Keep it simple:</strong> Store data as JSON objects or arrays</li>
+      <li><strong>Use descriptive keys:</strong> "user-settings" is better than "data1"</li>
+      <li><strong>Handle errors:</strong> Check response.ok before parsing JSON</li>
+    </ul>
+
+    <h2>Next Steps</h2>
+    <ul>
+      <li><a href="/guides/authentication/">Add user login</a> to personalize the experience</li>
+      <li><a href="/guides/getting-started/">Deploy your app</a> if you haven't already</li>
+    </ul>
+  </article>
+
+  <footer>
+    <p>Built for vibe coders everywhere</p>
+  </footer>
+</body>
+</html>

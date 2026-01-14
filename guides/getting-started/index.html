@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Getting Started - itsalive.co Guides</title>
+  <meta name="description" content="Deploy your first app with itsalive.co in under a minute. Step-by-step guide to going from code to live.">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <nav>
+    <a href="/" class="nav-logo">itsalive.co</a>
+    <div class="nav-links">
+      <a href="/how-it-works/">How it Works</a>
+      <a href="/guides/">Guides</a>
+      <a href="/support/">Support</a>
+      <a href="https://itsalive.co/dashboard" class="nav-btn">Login</a>
+    </div>
+  </nav>
+
+  <div class="page-header">
+    <h1>Getting Started</h1>
+    <p class="subtitle">Deploy your first app in under a minute</p>
+  </div>
+
+  <article class="guide-article">
+    <p>This guide will walk you through deploying your first app with itsalive.co. By the end, you'll have a live website with a public URL.</p>
+
+    <h2>Prerequisites</h2>
+    <p>You'll need:</p>
+    <ul>
+      <li>Node.js installed (for running npx)</li>
+      <li>A folder with your web files (HTML, CSS, JS)</li>
+      <li>An email address for verification</li>
+    </ul>
+
+    <h2>Step 1: Create Your App</h2>
+    <p>If you don't have a project yet, create a simple one:</p>
+    <pre><code>mkdir my-app
+cd my-app</code></pre>
+
+    <p>Create an <code>index.html</code> file:</p>
+    <pre><code>&lt;!DOCTYPE html&gt;
+&lt;html&gt;
+&lt;head&gt;
+  &lt;title&gt;My First App&lt;/title&gt;
+&lt;/head&gt;
+&lt;body&gt;
+  &lt;h1&gt;Hello, World!&lt;/h1&gt;
+  &lt;p&gt;My app is alive!&lt;/p&gt;
+&lt;/body&gt;
+&lt;/html&gt;</code></pre>
+
+    <h2>Step 2: Deploy</h2>
+    <p>In your project folder, run:</p>
+    <pre><code>npx itsalive-co</code></pre>
+
+    <p>You'll be prompted for:</p>
+    <ul>
+      <li><strong>Subdomain:</strong> Pick a unique name (e.g., "my-awesome-app")</li>
+      <li><strong>Email:</strong> Your email for verification</li>
+    </ul>
+
+    <h2>Step 3: Verify Your Email</h2>
+    <p>Check your inbox for a verification link. Click it to confirm your ownership.</p>
+    <p>The CLI will detect your verification automatically and proceed to upload your files.</p>
+
+    <h2>Step 4: You're Live!</h2>
+    <p>Once the upload completes, you'll see your URL:</p>
+    <pre><code>✨ https://my-awesome-app.itsalive.co</code></pre>
+    <p>That's it! Your app is now live on the internet.</p>
+
+    <h2>Updating Your App</h2>
+    <p>Made changes? Just run <code>npx itsalive-co</code> again in the same folder. It will remember your subdomain and deploy the updated files.</p>
+
+    <h2>Next Steps</h2>
+    <p>Now that your app is live, you might want to:</p>
+    <ul>
+      <li><a href="/guides/authentication/">Add user authentication</a></li>
+      <li><a href="/guides/add-database/">Store data with our database API</a></li>
+      <li><a href="/guides/custom-domains/">Connect a custom domain</a></li>
+    </ul>
+  </article>
+
+  <footer>
+    <p>Built for vibe coders everywhere</p>
+  </footer>
+</body>
+</html>

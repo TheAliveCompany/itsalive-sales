@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Add Authentication to Your App - itsalive.co</title>
+  <meta name="description" content="Add magic link login to your itsalive.co app. Let users sign in with their email - no passwords, no OAuth configuration.">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <nav>
+    <a href="/" class="nav-logo">itsalive.co</a>
+    <div class="nav-links">
+      <a href="/how-it-works/">How it Works</a>
+      <a href="/guides/">Guides</a>
+      <a href="/support/">Support</a>
+      <a href="https://itsalive.co/dashboard" class="nav-btn">Login</a>
+    </div>
+  </nav>
+
+  <div class="page-header">
+    <h1>Add Authentication to Your App</h1>
+    <p class="subtitle">Magic link login - no passwords required</p>
+  </div>
+
+  <article class="guide-article">
+    <p>Want users to sign in to your app? With itsalive.co, authentication is built in. Users enter their email, click a link, and they're logged in. No password management, no OAuth setup.</p>
+
+    <h2>How It Works</h2>
+    <ol>
+      <li>User enters their email</li>
+      <li>We send them a magic link</li>
+      <li>They click the link</li>
+      <li>They're logged in with a session cookie</li>
+    </ol>
+
+    <h2>Triggering Login</h2>
+    <p>Call the login endpoint with the user's email:</p>
+    <pre><code>async function login(email) {
+  const response = await fetch('/_auth/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email })
+  });
+
+  if (response.ok) {
+    alert('Check your email for a login link!');
+  }
+}</code></pre>
+
+    <h2>Checking Login Status</h2>
+    <p>See if the current user is logged in:</p>
+    <pre><code>async function checkAuth() {
+  const response = await fetch('/_auth/me');
+
+  if (response.ok) {
+    const user = await response.json();
+    console.log('Logged in as:', user.email);
+    return user;
+  } else {
+    console.log('Not logged in');
+    return null;
+  }
+}</code></pre>
+
+    <h2>Logging Out</h2>
+    <p>Clear the user's session:</p>
+    <pre><code>async function logout() {
+  await fetch('/_auth/logout', { method: 'POST' });
+  window.location.reload();
+}</code></pre>
+
+    <h2>Complete Example</h2>
+    <p>Here's a simple app with login/logout:</p>
+    <pre><code>&lt;!DOCTYPE html&gt;
+&lt;html&gt;
+&lt;head&gt;
+  &lt;title&gt;My App&lt;/title&gt;
+&lt;/head&gt;
+&lt;body&gt;
+  &lt;div id="app"&gt;&lt;/div&gt;
+
+  &lt;script&gt;
+    const app = document.getElementById('app');
+
+    async function checkAuth() {
+      const res = await fetch('/_auth/me');
+      if (res.ok) return await res.json();
+      return null;
+    }
+
+    async function login() {
+      const email = document.getElementById('email').value;
+      const res = await fetch('/_auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email })
+      });
+      if (res.ok) {
+        app.innerHTML = '&lt;p&gt;Check your email for a login link!&lt;/p&gt;';
+      }
+    }
+
+    async function logout() {
+      await fetch('/_auth/logout', { method: 'POST' });
+      window.location.reload();
+    }
+
+    async function init() {
+      const user = await checkAuth();
+
+      if (user) {
+        app.innerHTML = \`
+          &lt;h1&gt;Welcome, \${user.email}!&lt;/h1&gt;
+          &lt;button onclick="logout()"&gt;Log Out&lt;/button&gt;
+        \`;
+      } else {
+        app.innerHTML = \`
+          &lt;h1&gt;Please Log In&lt;/h1&gt;
+          &lt;input type="email" id="email" placeholder="your@email.com"&gt;
+          &lt;button onclick="login()"&gt;Send Login Link&lt;/button&gt;
+        \`;
+      }
+    }
+
+    init();
+  &lt;/script&gt;
+&lt;/body&gt;
+&lt;/html&gt;</code></pre>
+
+    <h2>User Data</h2>
+    <p>Once a user is logged in, the <code>/_auth/me</code> endpoint returns:</p>
+    <pre><code>{
+  "email": "user@example.com",
+  "id": "usr_abc123..."
+}</code></pre>
+
+    <h2>Protected Data</h2>
+    <p>Any data you store with the <a href="/guides/add-database/">database API</a> is automatically scoped to the logged-in user. No extra code needed.</p>
+
+    <h2>Tips</h2>
+    <ul>
+      <li><strong>Check auth on load:</strong> Call <code>/_auth/me</code> when your app starts</li>
+      <li><strong>Handle loading state:</strong> Show a spinner while checking auth</li>
+      <li><strong>Redirect after login:</strong> The magic link brings users back to your app automatically</li>
+    </ul>
+
+    <h2>Next Steps</h2>
+    <ul>
+      <li><a href="/guides/add-database/">Store user data</a> with the database API</li>
+      <li><a href="/guides/custom-domains/">Add a custom domain</a> for a professional look</li>
+    </ul>
+  </article>
+
+  <footer>
+    <p>Built for vibe coders everywhere</p>
+  </footer>
+</body>
+</html>
