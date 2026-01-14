@@ -20,39 +20,27 @@
 
   <div class="page-header">
     <h1>Getting Started</h1>
-    <p class="subtitle">Deploy your first app in under a minute</p>
+    <p class="subtitle">From zero to live app in minutes</p>
   </div>
 
   <article class="guide-article">
-    <p>This guide will walk you through deploying your first app with itsalive.co. By the end, you'll have a live website with a public URL.</p>
+    <p>This guide will walk you through creating and deploying your first app with itsalive.co. You'll set up your project, build something with Claude, and have it live on the internet in minutes.</p>
 
     <h2>Prerequisites</h2>
     <p>You'll need:</p>
     <ul>
       <li>Node.js installed (for running npx)</li>
-      <li>A folder with your web files (HTML, CSS, JS)</li>
+      <li><a href="https://claude.ai/download" target="_blank">Claude Code</a> or another AI coding assistant</li>
       <li>An email address for verification</li>
     </ul>
 
-    <h2>Step 1: Create Your App</h2>
-    <p>If you don't have a project yet, create a simple one:</p>
+    <h2>Step 1: Create Your Project</h2>
+    <p>Create a new folder for your app:</p>
     <pre><code>mkdir my-app
 cd my-app</code></pre>
 
-    <p>Create an <code>index.html</code> file:</p>
-    <pre><code>&lt;!DOCTYPE html&gt;
-&lt;html&gt;
-&lt;head&gt;
-  &lt;title&gt;My First App&lt;/title&gt;
-&lt;/head&gt;
-&lt;body&gt;
-  &lt;h1&gt;Hello, World!&lt;/h1&gt;
-  &lt;p&gt;My app is alive!&lt;/p&gt;
-&lt;/body&gt;
-&lt;/html&gt;</code></pre>
-
-    <h2>Step 2: Deploy</h2>
-    <p>In your project folder, run:</p>
+    <h2>Step 2: Initialize with itsalive</h2>
+    <p>Run the itsalive CLI to claim your subdomain and set up deployment:</p>
     <pre><code>npx itsalive-co</code></pre>
 
     <p>You'll be prompted for:</p>
@@ -61,24 +49,63 @@ cd my-app</code></pre>
       <li><strong>Email:</strong> Your email for verification</li>
     </ul>
 
-    <h2>Step 3: Verify Your Email</h2>
-    <p>Check your inbox for a verification link. Click it to confirm your ownership.</p>
-    <p>The CLI will detect your verification automatically and proceed to upload your files.</p>
+    <p>Check your inbox and click the verification link. The CLI will detect this and create a starter <code>index.html</code> file for you.</p>
 
-    <h2>Step 4: You're Live!</h2>
-    <p>Once the upload completes, you'll see your URL:</p>
+    <h2>Step 3: Build with Claude</h2>
+    <p>Now open Claude Code in your project folder and start building:</p>
+    <pre><code>claude</code></pre>
+
+    <p>Tell Claude what you want to build. For example:</p>
+    <ul>
+      <li>"Build me a personal portfolio site with my projects"</li>
+      <li>"Create a todo app that saves tasks to the database"</li>
+      <li>"Make a simple blog where I can post updates"</li>
+    </ul>
+
+    <p>Claude will create the HTML, CSS, and JavaScript files for your app. It already knows about itsalive.co's APIs for auth, database, and more.</p>
+
+    <h2>Step 4: Deploy Your Changes</h2>
+    <p>After Claude builds your app, deploy it:</p>
+    <pre><code>npx itsalive-co</code></pre>
+
+    <p>Your files will be uploaded and you'll see your live URL:</p>
     <pre><code>✨ https://my-awesome-app.itsalive.co</code></pre>
-    <p>That's it! Your app is now live on the internet.</p>
 
-    <h2>Updating Your App</h2>
-    <p>Made changes? Just run <code>npx itsalive-co</code> again in the same folder. It will remember your subdomain and deploy the updated files.</p>
+    <h2>Step 5: Iterate</h2>
+    <p>Keep vibing! Make changes with Claude, then run <code>npx itsalive-co</code> to deploy. The cycle is:</p>
+    <ol>
+      <li>Tell Claude what to build or change</li>
+      <li>Run <code>npx itsalive-co</code> to deploy</li>
+      <li>Check your live site</li>
+      <li>Repeat</li>
+    </ol>
+
+    <h2>Example Session</h2>
+    <pre><code>$ mkdir my-app && cd my-app
+$ npx itsalive-co
+? Subdomain: my-awesome-app
+? Email: me@example.com
+📧 Check your email...
+✔ Verified!
+✨ https://my-awesome-app.itsalive.co
+
+$ claude
+> Build me a habit tracker app where I can add habits
+> and check them off each day. Save the data so it
+> persists between visits.
+
+Claude creates index.html, styles.css, app.js...
+
+$ npx itsalive-co
+✔ Uploaded 3 files
+✨ https://my-awesome-app.itsalive.co</code></pre>
 
     <h2>Next Steps</h2>
-    <p>Now that your app is live, you might want to:</p>
+    <p>Now that your app is live, explore what else you can build:</p>
     <ul>
-      <li><a href="/guides/authentication/">Add user authentication</a></li>
-      <li><a href="/guides/add-database/">Store data with our database API</a></li>
-      <li><a href="/guides/custom-domains/">Connect a custom domain</a></li>
+      <li><a href="/guides/authentication/">Add user login</a> so each person has their own data</li>
+      <li><a href="/guides/add-database/">Learn more about the database API</a></li>
+      <li><a href="/guides/custom-domains/">Connect a custom domain</a> for a professional URL</li>
     </ul>
   </article>
 
