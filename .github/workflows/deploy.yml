@@ -11,13 +11,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.ref }}
           fetch-depth: 0
 
-      - name: Setup git branch
+      - name: Force main branch
         run: |
-          git checkout main || git checkout -b main
-          git branch
+          git symbolic-ref HEAD refs/heads/main
+          echo "Current branch: $(git rev-parse --abbrev-ref HEAD)"
 
       - name: Deploy to Cloudflare Pages
         env:
