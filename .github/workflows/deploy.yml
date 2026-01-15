@@ -10,18 +10,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Force main branch
-        run: |
-          git symbolic-ref HEAD refs/heads/main
-          echo "Current branch: $(git rev-parse --abbrev-ref HEAD)"
 
       - name: Deploy to Cloudflare Pages
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: e0225fb0aff3a38f75213d5fa53fd49f
-        run: |
-          rm -rf .github
-          npx wrangler pages deploy . --project-name itsalive-landing --commit-dirty=true
+        run: npx wrangler pages deploy . --project-name itsalive-landing --commit-dirty=true
