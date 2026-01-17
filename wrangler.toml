@@ -1,3 +1,9 @@
-name = "itsalive-landing"
-pages_build_output_dir = "./site"
+name = "itsalive-sales"
 compatibility_date = "2024-01-01"
+
+routes = [
+  { pattern = "itsalive.co/*", zone_name = "itsalive.co" }
+]
+
+[assets]
+directory = "./site"
