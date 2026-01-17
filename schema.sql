@@ -1,0 +1,240 @@
+-- App owners (people who deploy sites)
+CREATE TABLE IF NOT EXISTS owners (
+  id TEXT PRIMARY KEY,
+  email TEXT UNIQUE NOT NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Deployed apps
+CREATE TABLE IF NOT EXISTS apps (
+  subdomain TEXT PRIMARY KEY,
+  owner_id TEXT NOT NULL,
+  custom_domain TEXT,
+  cf_zone_id TEXT,
+  domain_status TEXT DEFAULT 'none',
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (owner_id) REFERENCES owners(id)
+);
+
+-- Pending deployments (awaiting email verification)
+CREATE TABLE IF NOT EXISTS pending_deploys (
+  id TEXT PRIMARY KEY,
+  subdomain TEXT NOT NULL,
+  email TEXT NOT NULL,
+  token TEXT,
+  files_manifest JSON,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  expires_at DATETIME NOT NULL
+);
+
+-- App users (end users who log into deployed apps)
+CREATE TABLE IF NOT EXISTS app_users (
+  id TEXT PRIMARY KEY,
+  app_subdomain TEXT NOT NULL,
+  email TEXT NOT NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(app_subdomain, email),
+  FOREIGN KEY (app_subdomain) REFERENCES apps(subdomain)
+);
+
+-- Sessions for app users
+CREATE TABLE IF NOT EXISTS sessions (
+  token TEXT PRIMARY KEY,
+  app_subdomain TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  expires_at DATETIME NOT NULL
+);
+
+-- App data (the db.get/set store)
+CREATE TABLE IF NOT EXISTS app_data (
+  app_subdomain TEXT NOT NULL,
+  collection TEXT NOT NULL,
+  doc_id TEXT NOT NULL,
+  data JSON NOT NULL,
+  created_by TEXT,
+  lat REAL,
+  lng REAL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (app_subdomain, collection, doc_id)
+);
+
+-- User-scoped data (the me.get/set store)
+CREATE TABLE IF NOT EXISTS user_data (
+  app_subdomain TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  key TEXT NOT NULL,
+  data JSON NOT NULL,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (app_subdomain, user_id, key)
+);
+
+-- Deploy tokens (for subsequent deploys without email verification)
+CREATE TABLE IF NOT EXISTS deploy_tokens (
+  token TEXT PRIMARY KEY,
+  subdomain TEXT NOT NULL,
+  email TEXT NOT NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (subdomain) REFERENCES apps(subdomain)
+);
+
+-- Collection settings (public_read, public_write, schema validation)
+CREATE TABLE IF NOT EXISTS collection_settings (
+  app_subdomain TEXT NOT NULL,
+  collection TEXT NOT NULL,
+  public_read INTEGER DEFAULT 0,
+  public_write INTEGER DEFAULT 0,
+  schema JSON,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (app_subdomain, collection)
+);
+
+-- App settings (branding, etc.)
+CREATE TABLE IF NOT EXISTS app_settings (
+  app_subdomain TEXT PRIMARY KEY,
+  email_app_name TEXT,
+  email_primary_color TEXT,
+  email_button_color TEXT,
+  email_tagline TEXT,
+  branding_configured INTEGER DEFAULT 0,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Platform bug reports from Claude instances
+CREATE TABLE IF NOT EXISTS platform_bugs (
+  id TEXT PRIMARY KEY,
+  app_subdomain TEXT NOT NULL,
+  title TEXT NOT NULL,
+  description TEXT NOT NULL,
+  code_context TEXT,
+  error_message TEXT,
+  severity TEXT DEFAULT 'medium',
+  status TEXT DEFAULT 'pending',
+  auto_fixable INTEGER DEFAULT 0,
+  fix_applied TEXT,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  reviewed_at DATETIME,
+  fixed_at DATETIME
+);
+
+-- Platform feedback from Claude instances
+CREATE TABLE IF NOT EXISTS platform_feedback (
+  id TEXT PRIMARY KEY,
+  app_subdomain TEXT NOT NULL,
+  category TEXT,
+  title TEXT NOT NULL,
+  description TEXT NOT NULL,
+  use_case TEXT,
+  priority_suggestion TEXT,
+  status TEXT DEFAULT 'new',
+  roadmap_item_id TEXT,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  reviewed_at DATETIME
+);
+
+-- User file uploads
+CREATE TABLE IF NOT EXISTS uploads (
+  id TEXT PRIMARY KEY,
+  app_subdomain TEXT NOT NULL,
+  filename TEXT NOT NULL,
+  original_filename TEXT,
+  content_type TEXT NOT NULL,
+  size INTEGER NOT NULL,
+  width INTEGER,
+  height INTEGER,
+  variants TEXT,
+  created_by TEXT,
+  public INTEGER DEFAULT 1,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Email sending log
+CREATE TABLE IF NOT EXISTS email_log (
+  id TEXT PRIMARY KEY,
+  app_subdomain TEXT NOT NULL,
+  to_email TEXT NOT NULL,
+  to_user_id TEXT,
+  subject TEXT NOT NULL,
+  template TEXT,
+  status TEXT DEFAULT 'queued',
+  error_message TEXT,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  sent_at DATETIME
+);
+
+-- Email templates
+CREATE TABLE IF NOT EXISTS email_templates (
+  id TEXT PRIMARY KEY,
+  app_subdomain TEXT NOT NULL,
+  name TEXT NOT NULL,
+  subject TEXT NOT NULL,
+  html_body TEXT NOT NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(app_subdomain, name)
+);
+
+-- Webhooks for collection events
+CREATE TABLE IF NOT EXISTS webhooks (
+  id TEXT PRIMARY KEY,
+  app_subdomain TEXT NOT NULL,
+  collection TEXT NOT NULL,
+  event TEXT NOT NULL,
+  url TEXT NOT NULL,
+  secret TEXT,
+  enabled INTEGER DEFAULT 1,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Cron jobs
+CREATE TABLE IF NOT EXISTS cron_jobs (
+  id TEXT PRIMARY KEY,
+  app_subdomain TEXT NOT NULL,
+  name TEXT,
+  schedule TEXT NOT NULL,
+  url TEXT NOT NULL,
+  method TEXT DEFAULT 'POST',
+  headers TEXT,
+  body TEXT,
+  enabled INTEGER DEFAULT 1,
+  last_run DATETIME,
+  next_run DATETIME,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Job queue
+CREATE TABLE IF NOT EXISTS jobs (
+  id TEXT PRIMARY KEY,
+  app_subdomain TEXT NOT NULL,
+  type TEXT NOT NULL,
+  data TEXT,
+  status TEXT DEFAULT 'pending',
+  run_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  started_at DATETIME,
+  completed_at DATETIME,
+  attempts INTEGER DEFAULT 0,
+  max_attempts INTEGER DEFAULT 3,
+  error_message TEXT,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Indexes for performance
+CREATE INDEX IF NOT EXISTS idx_pending_token ON pending_deploys(token);
+CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(app_subdomain, user_id);
+CREATE INDEX IF NOT EXISTS idx_sessions_token ON sessions(token);
+CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at);
+CREATE INDEX IF NOT EXISTS idx_app_data_collection ON app_data(app_subdomain, collection);
+CREATE INDEX IF NOT EXISTS idx_app_data_geo ON app_data(app_subdomain, collection, lat, lng);
+CREATE INDEX IF NOT EXISTS idx_apps_owner ON apps(owner_id);
+CREATE INDEX IF NOT EXISTS idx_apps_custom_domain ON apps(custom_domain);
+CREATE INDEX IF NOT EXISTS idx_deploy_tokens_subdomain ON deploy_tokens(subdomain);
+CREATE INDEX IF NOT EXISTS idx_bugs_status ON platform_bugs(status);
+CREATE INDEX IF NOT EXISTS idx_feedback_status ON platform_feedback(status);
+CREATE INDEX IF NOT EXISTS idx_uploads_subdomain ON uploads(app_subdomain);
+CREATE INDEX IF NOT EXISTS idx_uploads_user ON uploads(app_subdomain, created_by);
+CREATE INDEX IF NOT EXISTS idx_email_log_subdomain ON email_log(app_subdomain, created_at);
+CREATE INDEX IF NOT EXISTS idx_email_log_user ON email_log(app_subdomain, to_user_id);
+CREATE INDEX IF NOT EXISTS idx_webhooks_subdomain ON webhooks(app_subdomain, collection);
+CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(app_subdomain, status, run_at);
+CREATE INDEX IF NOT EXISTS idx_cron_next_run ON cron_jobs(enabled, next_run);

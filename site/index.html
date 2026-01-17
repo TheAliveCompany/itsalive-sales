@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>itsalive.co - Go from Vibe to Live in 10 seconds flat</title>
+  <meta name="description" content="Everything you need to ship your Claude Code project - auth, database, and hosting in one command.">
+
+  <!-- OpenGraph -->
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://itsalive.co">
+  <meta property="og:title" content="It's Alive! - Go from Vibe to Live in 10 seconds flat">
+  <meta property="og:description" content="Everything you need to ship your Claude Code project - auth, database, and hosting in one command.">
+  <meta property="og:image" content="https://itsalive.co/og-image.png">
+
+  <!-- Twitter -->
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:url" content="https://itsalive.co">
+  <meta name="twitter:title" content="It's Alive! - Go from Vibe to Live in 10 seconds flat">
+  <meta name="twitter:description" content="Everything you need to ship your Claude Code project - auth, database, and hosting in one command.">
+  <meta name="twitter:image" content="https://itsalive.co/og-image.png">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <nav>
+    <a href="/" class="nav-logo">itsalive.co</a>
+    <div class="nav-links">
+      <a href="/how-it-works/">How it Works</a>
+      <a href="/guides/">Guides</a>
+      <a href="/support/">Support</a>
+      <a href="https://itsalive.co/dashboard" class="nav-btn">Login</a>
+    </div>
+  </nav>
+
+  <section class="hero" style="padding-top:5rem;">
+    <div class="terminal">
+      <div class="terminal-header">
+        <div class="terminal-btn red"></div>
+        <div class="terminal-btn yellow"></div>
+        <div class="terminal-btn green"></div>
+        <div class="terminal-title">~/my-awesome-app</div>
+      </div>
+      <div class="terminal-body" id="terminal"></div>
+      <script>
+        (function() {
+          const lines = [
+            { type: 'type', prefix: '$ ', text: 'npx itsalive-co', class: 'command', delay: 500 },
+            { type: 'line', text: '', class: 'empty', delay: 200 },
+            { type: 'line', text: '🚀 itsalive.co', class: 'output', delay: 400 },
+            { type: 'line', text: '', class: 'empty', delay: 200 },
+            { type: 'type', prefix: '? <b>Subdomain:</b> ', suffix: '<span style="color:#666">.itsalive.co</span>', text: 'my-awesome-app', class: 'highlight', delay: 300 },
+            { type: 'replace', text: '✔ <b>Subdomain:</b> <span class="typed">my-awesome-app</span><span style="color:#666">.itsalive.co</span>', class: 'success', delay: 100 },
+            { type: 'type', prefix: '? <b>Email:</b> ', text: 'me@example.com', class: 'highlight', delay: 300 },
+            { type: 'replace', text: '✔ <b>Email:</b> <span class="typed">me@example.com</span>', class: 'success', delay: 100 },
+            { type: 'line', text: '', class: 'empty', delay: 200 },
+            { type: 'line', text: '📧 Check your email to verify...', class: 'info', delay: 400 },
+            { type: 'line', text: '', class: 'empty', delay: 200 },
+            { type: 'line', text: '⠋ Waiting for you...', class: 'output', delay: 1200 },
+            { type: 'replace', text: '✔ Verified!', class: 'success', delay: 300 },
+            { type: 'line', text: '⠋ Uploading ░░░░░░░░░░░░░░░░░░░░ 0/12', class: 'output', delay: 200 },
+            { type: 'replace', text: '⠋ Uploading █████░░░░░░░░░░░░░░░ 3/12', class: 'output', delay: 150 },
+            { type: 'replace', text: '⠋ Uploading ██████████░░░░░░░░░░ 6/12', class: 'output', delay: 150 },
+            { type: 'replace', text: '⠋ Uploading ███████████████░░░░░ 9/12', class: 'output', delay: 150 },
+            { type: 'replace', text: '✔ Uploaded 12 files', class: 'success', delay: 300 },
+            { type: 'line', text: '', class: 'empty', delay: 200 },
+            { type: 'line', text: '✨ <span class="url">https://my-awesome-app.itsalive.co</span>', class: 'success final', delay: 0 },
+          ];
+          const terminal = document.getElementById('terminal');
+          let lineIndex = 0;
+
+          function typeLine(el, prefix, text, suffix, callback) {
+            el.innerHTML = prefix + '<span class="cursor"></span>' + (suffix || '');
+            let i = 0;
+            function typeChar() {
+              if (i < text.length) {
+                el.innerHTML = prefix + '<span class="typed">' + text.substring(0, i + 1) + '</span><span class="cursor"></span>' + (suffix || '');
+                i++;
+                setTimeout(typeChar, 35 + Math.random() * 35);
+              } else {
+                el.innerHTML = prefix + '<span class="typed">' + text + '</span>' + (suffix || '');
+                callback();
+              }
+            }
+            setTimeout(typeChar, 150);
+          }
+
+          let lastEl = null;
+          function nextLine() {
+            if (lineIndex >= lines.length) return;
+            const line = lines[lineIndex];
+            lineIndex++;
+
+            let el;
+            if (line.type === 'replace' && lastEl) {
+              el = lastEl;
+              el.className = 'terminal-line ' + line.class;
+            } else {
+              el = document.createElement('div');
+              el.className = 'terminal-line ' + line.class;
+              terminal.appendChild(el);
+            }
+            lastEl = el;
+
+            if (line.type === 'type') {
+              typeLine(el, line.prefix, line.text, line.suffix, () => setTimeout(nextLine, line.delay));
+            } else {
+              el.innerHTML = line.text || '&nbsp;';
+              setTimeout(nextLine, line.delay);
+            }
+          }
+
+          setTimeout(nextLine, 600);
+        })();
+      </script>
+    </div>
+    <div class="hero-content">
+      <h1>It's Alive!</h1>
+      <p class="tagline">Go from Vibe to Live in 10 seconds flat.</p>
+      <p class="description">Auth, database, AI, email, analytics - everything just works. No API keys. No configuration. Just deploy.</p>
+      <button class="cta" onclick="navigator.clipboard.writeText('npx itsalive-co')">
+        <span>npx itsalive-co</span>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+          <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+        </svg>
+      </button>
+      <p class="cta-hint">Click to copy</p>
+    </div>
+  </section>
+
+  <section class="features">
+    <h2>Everything You Need, Built In</h2>
+    <p class="subtitle">Integrates with Claude Code to give it superpowers. No more plumbing, just vibe and watch the magic.</p>
+    <div class="features-grid">
+      <div class="feature">
+        <div class="feature-icon">🔐</div>
+        <h3>Auth</h3>
+        <p>Magic link login for your users. Zero config.</p>
+      </div>
+      <div class="feature">
+        <div class="feature-icon">💾</div>
+        <h3>Database</h3>
+        <p>Store and query data with simple API calls.</p>
+      </div>
+      <div class="feature">
+        <div class="feature-icon">📁</div>
+        <h3>File Uploads</h3>
+        <p>Let users upload images and files. Stored and served from the edge.</p>
+      </div>
+      <div class="feature">
+        <div class="feature-icon">🤖</div>
+        <h3>AI</h3>
+        <p>Claude & GPT built in. Just call the API, we handle billing.</p>
+      </div>
+      <div class="feature">
+        <div class="feature-icon">📧</div>
+        <h3>Email</h3>
+        <p>Send emails from your app. No Sendgrid account needed.</p>
+      </div>
+      <div class="feature">
+        <div class="feature-icon">📊</div>
+        <h3>Analytics</h3>
+        <p>See visitors, API usage, and more in your dashboard.</p>
+      </div>
+      <div class="feature">
+        <div class="feature-icon">⚡</div>
+        <h3>Edge Hosting</h3>
+        <p>Deployed globally on Cloudflare. Fast everywhere.</p>
+      </div>
+      <div class="feature">
+        <div class="feature-icon">⏰</div>
+        <h3>Cron Jobs</h3>
+        <p>Schedule tasks to run on any interval. Background jobs made easy.</p>
+      </div>
+      <div class="feature">
+        <div class="feature-icon">💳</div>
+        <h3>Payments</h3>
+        <p>Collect payments and subscriptions. E-commerce ready out of the box.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="pricing">
+    <h2>Simple Pricing</h2>
+    <p class="subtitle">Start free, upgrade when you need more</p>
+    <div class="pricing-grid">
+      <div class="plan">
+        <div class="plan-name">Free</div>
+        <div class="plan-price">$0</div>
+        <p class="plan-desc">Perfect for side projects and experiments</p>
+        <ul class="plan-features">
+          <li>Up to 10 sites</li>
+          <li>Auth, database, hosting</li>
+          <li>Basic analytics</li>
+          <li>100 emails/day</li>
+          <li>AI: pay per use</li>
+          <li>10,000 visitors/month</li>
+        </ul>
+        <button class="plan-cta secondary" onclick="navigator.clipboard.writeText('npx itsalive-co')">Get Started Free</button>
+      </div>
+      <div class="plan featured">
+        <div class="plan-name">Pro</div>
+        <div class="plan-price">$50<span>/year per site</span></div>
+        <p class="plan-desc">For apps that are ready for the real world</p>
+        <ul class="plan-features">
+          <li>Custom domain</li>
+          <li>Staging environment</li>
+          <li>Full analytics dashboard</li>
+          <li>10,000 Credits for AI & Email</li>
+          <li>100,000 visitors/month</li>
+          <li>Priority support</li>
+        </ul>
+        <button class="plan-cta">Coming Soon</button>
+      </div>
+      <div class="plan">
+        <div class="plan-name">Studio</div>
+        <div class="plan-price">$500<span>/year</span></div>
+        <p class="plan-desc">For agencies and studios shipping client work</p>
+        <ul class="plan-features">
+          <li>Up to 100 sites</li>
+          <li>White-label subdomain (*.yourstudio.com)</li>
+          <li>Custom domains included</li>
+          <li>Staging environments</li>
+          <li>100,000 Credits for AI & Email</li>
+          <li>Everything in Pro</li>
+        </ul>
+        <button class="plan-cta">Coming Soon</button>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <p>Built for vibe coders everywhere</p>
+  </footer>
+</body>
+</html>

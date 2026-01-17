@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Connect a Custom Domain - itsalive.co</title>
+  <meta name="description" content="Use your own domain with your itsalive.co app. Step-by-step guide to setting up DNS and connecting a custom domain.">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <nav>
+    <a href="/" class="nav-logo">itsalive.co</a>
+    <div class="nav-links">
+      <a href="/how-it-works/">How it Works</a>
+      <a href="/guides/">Guides</a>
+      <a href="/support/">Support</a>
+      <a href="https://itsalive.co/dashboard" class="nav-btn">Login</a>
+    </div>
+  </nav>
+
+  <div class="page-header">
+    <h1>Connect a Custom Domain</h1>
+    <p class="subtitle">Use your own domain instead of .itsalive.co</p>
+  </div>
+
+  <article class="guide-article">
+    <p>Want to use <code>myapp.com</code> instead of <code>myapp.itsalive.co</code>? Custom domains are available on the Pro plan and give your app a professional, branded URL.</p>
+
+    <h2>Prerequisites</h2>
+    <ul>
+      <li>An itsalive.co app already deployed</li>
+      <li>A domain you own</li>
+      <li>Access to your domain's DNS settings</li>
+      <li>Pro plan ($50/year per site)</li>
+    </ul>
+
+    <h2>Step 1: Configure DNS</h2>
+    <p>Add these DNS records at your domain registrar:</p>
+
+    <h3>For root domain (myapp.com)</h3>
+    <pre><code>Type: A
+Name: @
+Value: 76.76.21.21</code></pre>
+
+    <h3>For www subdomain (www.myapp.com)</h3>
+    <pre><code>Type: CNAME
+Name: www
+Value: cname.itsalive.co</code></pre>
+
+    <h2>Step 2: Add Domain in Dashboard</h2>
+    <ol>
+      <li>Go to your <a href="https://itsalive.co/dashboard">dashboard</a></li>
+      <li>Select your app</li>
+      <li>Click "Custom Domain"</li>
+      <li>Enter your domain (e.g., myapp.com)</li>
+      <li>Click "Add Domain"</li>
+    </ol>
+
+    <h2>Step 3: Wait for DNS Propagation</h2>
+    <p>DNS changes can take up to 48 hours to propagate, but usually work within a few minutes. You can check propagation status at <a href="https://dnschecker.org" target="_blank">dnschecker.org</a>.</p>
+
+    <h2>SSL Certificate</h2>
+    <p>We automatically provision an SSL certificate for your custom domain. This happens automatically once DNS is configured correctly. Your site will be available at both <code>http://</code> and <code>https://</code>, with automatic redirect to HTTPS.</p>
+
+    <h2>Troubleshooting</h2>
+
+    <h3>Domain not working?</h3>
+    <ul>
+      <li>Double-check your DNS records are correct</li>
+      <li>Wait a few more minutes for propagation</li>
+      <li>Make sure you added the domain in your dashboard</li>
+    </ul>
+
+    <h3>SSL errors?</h3>
+    <ul>
+      <li>SSL certificates can take up to an hour to provision</li>
+      <li>Clear your browser cache and try again</li>
+      <li>Try an incognito window</li>
+    </ul>
+
+    <h2>Multiple Domains</h2>
+    <p>You can point multiple domains to the same app. Just add each one in your dashboard. This is useful for:</p>
+    <ul>
+      <li>Root domain + www (myapp.com and www.myapp.com)</li>
+      <li>Multiple TLDs (myapp.com and myapp.io)</li>
+      <li>Regional domains (myapp.co.uk)</li>
+    </ul>
+
+    <h2>Next Steps</h2>
+    <ul>
+      <li><a href="/guides/authentication/">Add user authentication</a></li>
+      <li><a href="/guides/add-database/">Store data with our database</a></li>
+    </ul>
+  </article>
+
+  <footer>
+    <p>Built for vibe coders everywhere</p>
+  </footer>
+</body>
+</html>

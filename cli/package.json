@@ -1,0 +1,31 @@
+{
+  "name": "itsalive-co",
+  "version": "1.8.0",
+  "type": "module",
+  "description": "Deploy your web app to itsalive.co with one command",
+  "bin": {
+    "itsalive": "./src/index.js"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "dev": "node src/index.js"
+  },
+  "dependencies": {
+    "chalk": "^5.3.0",
+    "glob": "^10.3.10",
+    "ora": "^8.0.1",
+    "prompts": "^2.4.2"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "deploy",
+    "static",
+    "hosting",
+    "itsalive"
+  ],
+  "license": "MIT"
+}

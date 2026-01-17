@@ -1,0 +1,27 @@
+name = "itsalive-serve"
+main = "src/index.js"
+compatibility_date = "2024-01-01"
+workers_dev = true
+
+routes = [
+  { pattern = "*.itsalive.co/*", zone_name = "itsalive.co" },
+  { pattern = "crosslet.net/*", zone_name = "crosslet.net" }
+]
+
+[[r2_buckets]]
+binding = "SITES"
+bucket_name = "itsalive-sites"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "itsalive-db"
+database_id = "08e902ec-f754-47a1-8f1d-63c916aefef4"
+
+[[kv_namespaces]]
+binding = "EMAIL_TOKENS"
+id = "07925433be8740968fd9245aace368ea"
+
+# Service binding to API worker for direct worker-to-worker calls
+[[services]]
+binding = "API"
+service = "itsalive-api"

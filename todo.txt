@@ -1,0 +1,54 @@
+# itsalive.co - Todo List
+
+NOTE: These are discussion items - let's talk through them together rather than just diving in.
+
+## Vision
+The defacto platform for vibe-coded apps. Zero friction. No external API keys.
+Deploy and everything just works - auth, database, AI, email, payments, stats.
+
+## Priority - Foundation
+- [ ] Solidify DB permissions model (creator owns their docs, public read option?)
+- [ ] Solidify auth (session length, OAuth options later?)
+- [ ] Usage metering infrastructure (track everything for billing + stats)
+- [ ] Stats dashboard for users (visitors, API calls, storage, etc.)
+- [ ] Billing infrastructure (Stripe integration, usage-based billing)
+
+## Priority - Services to Proxy
+- [ ] AI API - proxy to Claude/OpenAI, user just calls us, we bill them
+- [ ] Email sending - expose Resend to user apps (already have it for ourselves)
+- [ ] Payments - Stripe proxy so users can accept payments without their own Stripe account
+
+## Priority - Business
+- [ ] Security review - full audit before scaling
+- [ ] Upgrade flow - how users move from Free → Pro → Studio
+
+## Features by Tier
+| Feature | Free | Pro | Studio |
+|---------|------|-----|--------|
+| Hosting | ✓ | ✓ | ✓ |
+| Auth | ✓ | ✓ | ✓ |
+| Database | ✓ | ✓ | ✓ |
+| Stats dashboard | Basic | Full | Full |
+| AI API | Pay per use | Pay per use | Pay per use |
+| Email sending | 100/day | 1000/day | 10000/day |
+| Custom domain | - | ✓ | ✓ |
+| Staging env | - | ✓ | ✓ |
+| White-label subdomain | - | - | ✓ |
+| Sites | 10 | 1 per $50 | 100 |
+
+## Other Ideas
+- [ ] Create `apps` table in D1 for tracking deployed sites
+- [ ] Custom domain support (DNS instructions, SSL)
+- [ ] Docker/npm - more complex app deployments (future)
+
+### CLI Improvements
+- [ ] Add `--reset` flag to clear .itsalive config
+- [ ] Add `--info` flag to show current config
+- [ ] Add `--watch` mode for dev (auto-deploy on changes)
+
+### Documentation
+- [ ] Update ITSALIVE.md with AI/email/stats API examples
+- [ ] Common patterns and examples for Claude
+
+---
+Last updated: Planning session - vision alignment
