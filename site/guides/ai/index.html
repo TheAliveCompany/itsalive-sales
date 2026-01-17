@@ -203,46 +203,38 @@
       <span class="use-case">Research</span>
     </div>
 
-    <h2>Basic Usage</h2>
-    <pre><code>// Simple chat request
-const response = await fetch('/_ai/chat', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  credentials: 'include',
-  body: JSON.stringify({
-    provider: 'claude',  // 'claude', 'gpt', or 'gemini'
-    tier: 'good',        // 'good' or 'best'
-    messages: [
-      { role: 'user', content: 'What is the capital of France?' }
-    ]
-  })
-});
+    <h2>How to Use AI Features</h2>
+    <p>Just tell Claude what you want to build. Here are some examples:</p>
 
-const { content, usage } = await response.json();
-console.log(content);  // "The capital of France is Paris."
-console.log(usage.credits_used);  // 1</code></pre>
+    <div class="model-card">
+      <h3>AI Chat</h3>
+      <p><strong>Ask Claude:</strong></p>
+      <pre><code>"Add an AI chat feature to my app. When users type a question,
+send it to Claude using the good tier and display the response.
+Show a loading spinner while waiting."</code></pre>
+      <pre><code>"Create a recipe suggestion feature. Users describe what
+ingredients they have, and GPT suggests recipes. Use the good
+tier to keep costs low."</code></pre>
+      <pre><code>"Build a writing assistant that helps users improve their text.
+Use Claude best tier for high-quality suggestions. Include a
+'make it shorter' and 'make it more formal' button."</code></pre>
+    </div>
 
-    <h2>Image Analysis (Vision)</h2>
-    <p>All chat models support image input:</p>
-    <pre><code>const response = await fetch('/_ai/chat', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  credentials: 'include',
-  body: JSON.stringify({
-    provider: 'claude',
-    tier: 'good',
-    messages: [{
-      role: 'user',
-      content: [
-        { type: 'text', text: 'What is in this image?' },
-        { type: 'image', url: 'https://example.com/photo.jpg' }
-      ]
-    }]
-  })
-});</code></pre>
+    <div class="model-card">
+      <h3>Image Analysis (Vision)</h3>
+      <p><strong>Ask Claude:</strong></p>
+      <pre><code>"Add a plant identifier feature. Users upload a photo of a
+plant, and Claude analyzes it to identify the species and
+provide care instructions."</code></pre>
+      <pre><code>"Create a receipt scanner. Users take a photo of a receipt,
+and AI extracts the items, prices, and total. Store the data
+in a 'receipts' collection."</code></pre>
+      <pre><code>"Build a homework helper where students can upload a photo
+of a math problem and get step-by-step explanations."</code></pre>
+    </div>
 
     <h2>Image Generation (DALL-E)</h2>
-    <p>Generate images from text prompts:</p>
+    <p>Generate images from text prompts.</p>
 
     <table class="pricing-table">
       <thead>
@@ -287,56 +279,53 @@ console.log(usage.credits_used);  // 1</code></pre>
       </tbody>
     </table>
 
-    <pre><code>const response = await fetch('/_ai/image', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  credentials: 'include',
-  body: JSON.stringify({
-    prompt: 'A serene mountain landscape at sunset',
-    model: 'dall-e-3',
-    size: '1024x1024',
-    quality: 'standard'
-  })
-});
-
-const { images, credits_used } = await response.json();
-console.log(images[0].url);  // URL to generated image</code></pre>
+    <div class="model-card">
+      <h3>Image Generation Examples</h3>
+      <p><strong>Ask Claude:</strong></p>
+      <pre><code>"Add an avatar generator. Users describe themselves, and
+DALL-E creates a cartoon avatar. Let them regenerate if
+they don't like it. Save the final avatar to their profile."</code></pre>
+      <pre><code>"Create a children's story feature where kids type a story
+idea, AI writes a short story, and DALL-E generates an
+illustration for it."</code></pre>
+      <pre><code>"Build a product mockup tool. Users describe a t-shirt
+design, and DALL-E generates what it would look like.
+Use HD quality for better results."</code></pre>
+    </div>
 
     <h2>Speech-to-Text (Whisper)</h2>
     <p>Transcribe audio files. Costs ~10 credits per minute of audio.</p>
-    <pre><code>const formData = new FormData();
-formData.append('file', audioFile);
 
-const response = await fetch('/_ai/transcribe', {
-  method: 'POST',
-  credentials: 'include',
-  body: formData
-});
-
-const { text, duration, credits_used } = await response.json();
-console.log(text);  // Transcribed text</code></pre>
+    <div class="model-card">
+      <h3>Transcription Examples</h3>
+      <p><strong>Ask Claude:</strong></p>
+      <pre><code>"Add voice notes to my app. Users can record audio,
+which gets transcribed and saved as a text note.
+Show the transcription when they view the note."</code></pre>
+      <pre><code>"Create a meeting notes feature. Users upload an audio
+recording, it gets transcribed, then Claude summarizes
+the key points and action items."</code></pre>
+      <pre><code>"Build a language learning feature where users record
+themselves speaking, get a transcription, and AI
+provides pronunciation feedback."</code></pre>
+    </div>
 
     <h2>Text-to-Speech</h2>
     <p>Generate natural-sounding speech. Costs ~20 credits per 1,000 characters (40 for HD).</p>
-
     <p><strong>Available voices:</strong> alloy, echo, fable, onyx, nova, shimmer</p>
 
-    <pre><code>const response = await fetch('/_ai/tts', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  credentials: 'include',
-  body: JSON.stringify({
-    input: 'Welcome to our application!',
-    voice: 'nova',
-    model: 'tts-1'  // or 'tts-1-hd' for higher quality
-  })
-});
-
-// Response is audio binary
-const audioBlob = await response.blob();
-const audioUrl = URL.createObjectURL(audioBlob);
-const audio = new Audio(audioUrl);
-audio.play();</code></pre>
+    <div class="model-card">
+      <h3>Text-to-Speech Examples</h3>
+      <p><strong>Ask Claude:</strong></p>
+      <pre><code>"Add a 'read aloud' button to my blog posts. When clicked,
+it converts the article to speech using the nova voice
+and plays it. Include pause/resume controls."</code></pre>
+      <pre><code>"Create an accessibility feature that reads any page content
+aloud when users press a keyboard shortcut."</code></pre>
+      <pre><code>"Build a bedtime story app. AI writes a short story based
+on a child's name and favorite animal, then reads it
+aloud with the fable voice."</code></pre>
+    </div>
 
     <h2>Choosing the Right Model</h2>
     <table class="pricing-table">
@@ -386,36 +375,118 @@ audio.play();</code></pre>
       </tbody>
     </table>
 
-    <h2>Check Your Credits</h2>
-    <pre><code>const { balance, lifetime_used } = await fetch('/_ai/credits', {
-  credentials: 'include'
-}).then(r => r.json());
+    <h2>Managing Credits</h2>
+    <div class="model-card">
+      <h3>Credit Balance Examples</h3>
+      <p><strong>Ask Claude:</strong></p>
+      <pre><code>"Show the user's AI credit balance in the header. Display it
+as a dollar amount. If they're running low (under $1), show
+a warning and link to buy more credits."</code></pre>
+      <pre><code>"Create an admin page that shows my app's total AI usage
+this month, broken down by feature."</code></pre>
+    </div>
 
-console.log(`Balance: ${balance} credits ($${(balance * 0.001).toFixed(2)})`);
-console.log(`Lifetime used: ${lifetime_used} credits`);</code></pre>
+    <h2>Handling Errors</h2>
+    <div class="model-card">
+      <h3>Error Handling Examples</h3>
+      <p><strong>Ask Claude:</strong></p>
+      <pre><code>"When AI requests fail due to insufficient credits, show a
+friendly message telling the user they need to add credits,
+with a button to purchase more."</code></pre>
+      <pre><code>"If the AI request fails, show a retry button. After 3
+failures, show a 'contact support' message instead."</code></pre>
+    </div>
 
-    <h2>Error Handling</h2>
-    <pre><code>const response = await fetch('/_ai/chat', { ... });
-
-if (response.status === 402) {
-  const { balance, required } = await response.json();
-  alert(`Insufficient credits. You have ${balance}, need ${required}.`);
-} else if (response.status === 401) {
-  alert('Please log in to use AI features.');
-} else if (!response.ok) {
-  const error = await response.json();
-  console.error('AI error:', error.details);
-}</code></pre>
-
-    <h2>Tips</h2>
+    <h2>Tips for Vibe Coding with AI</h2>
     <ul>
-      <li><strong>Start with Good tier</strong> - It handles most tasks well and costs less</li>
-      <li><strong>Use Best tier for quality-critical tasks</strong> - Complex reasoning, important content</li>
-      <li><strong>GPT-5 Mini for volume</strong> - When you need thousands of requests cheaply</li>
-      <li><strong>Claude for coding</strong> - Consistently best at code generation and review</li>
-      <li><strong>Set system prompts</strong> - Guide the model's behavior for consistent results</li>
-      <li><strong>Monitor usage</strong> - Check <code>/_ai/usage</code> to track spending</li>
+      <li><strong>Specify the tier</strong> - Tell Claude to use "good tier" for everyday tasks or "best tier" for important features</li>
+      <li><strong>Mention the provider</strong> - Say "use Claude for..." or "use GPT for..." to pick the right model for your use case</li>
+      <li><strong>Describe the UX</strong> - Tell Claude what users should see: loading states, error messages, success feedback</li>
+      <li><strong>Think about cost</strong> - For high-volume features, ask Claude to use GPT-5 Mini or Gemini Flash to keep costs low</li>
+      <li><strong>Combine features</strong> - "Transcribe the audio, then have Claude summarize it" - chain AI features together</li>
     </ul>
+
+    <h2>Example Apps</h2>
+    <p>Here are some complete apps we've built with vibe coding. Each one shows the full prompt we used.</p>
+
+    <div class="model-card">
+      <h3>Recipe Buddy</h3>
+      <p>A cooking app where users list ingredients and get recipe suggestions.</p>
+      <p><strong>The prompt:</strong></p>
+      <pre><code>"Build a recipe app. The main screen has a text area where users
+list ingredients they have (one per line). There's a 'Get Recipes'
+button that sends the ingredients to GPT-5 Mini and asks for 3
+recipe suggestions that use those ingredients. Display each recipe
+as a card with the name, cook time, and instructions. Add a 'Save'
+button on each recipe that stores it to a 'saved_recipes' collection
+linked to the user. Include a 'My Saved Recipes' page that shows
+all their saved recipes."</code></pre>
+    </div>
+
+    <div class="model-card">
+      <h3>Plant Doctor</h3>
+      <p>Upload a photo of a sick plant, get diagnosis and care advice.</p>
+      <p><strong>The prompt:</strong></p>
+      <pre><code>"Create a plant health app. Users can upload a photo of their
+plant. Send the image to Claude good tier with the prompt 'This
+plant appears unhealthy. Identify what's wrong and provide specific
+care instructions to help it recover.' Show the diagnosis with
+an icon indicating severity (yellow for minor, red for serious).
+Include a 'Get Second Opinion' button that sends the same image
+to Claude best tier for a more detailed analysis. Save the
+diagnosis history to a 'plant_diagnoses' collection."</code></pre>
+    </div>
+
+    <div class="model-card">
+      <h3>Story Time</h3>
+      <p>Generate bedtime stories for kids with illustrations and narration.</p>
+      <p><strong>The prompt:</strong></p>
+      <pre><code>"Build a bedtime story app. The home screen asks for the child's
+name, their favorite animal, and a theme (adventure, friendship,
+magic). When they click 'Create Story', use Claude good tier to
+write a 5-paragraph children's story featuring those elements.
+Then generate an illustration with DALL-E using a prompt based
+on the story's main scene. Finally, add a 'Read Aloud' button
+that uses text-to-speech with the 'fable' voice to narrate the
+story. Save each story to 'stories' collection so kids can
+revisit their favorites."</code></pre>
+    </div>
+
+    <div class="model-card">
+      <h3>Meeting Notes Pro</h3>
+      <p>Record meetings, get transcripts, summaries, and action items.</p>
+      <p><strong>The prompt:</strong></p>
+      <pre><code>"Create a meeting notes app. Users can either record audio
+directly in the browser or upload an audio file. Transcribe
+it with Whisper. Then send the transcript to Claude best tier
+and ask it to:
+1. Write a 3-sentence summary
+2. List all action items with who's responsible
+3. Identify any decisions that were made
+4. Note any unresolved questions
+
+Display each section in a collapsible panel. Add an 'Email
+Summary' button that sends the summary to all attendees
+(they enter email addresses in a text field). Store everything
+in a 'meetings' collection with the date and participants."</code></pre>
+    </div>
+
+    <div class="model-card">
+      <h3>Flash Card Genius</h3>
+      <p>Generate study flashcards from any topic or document.</p>
+      <p><strong>The prompt:</strong></p>
+      <pre><code>"Build a flashcard study app. Users can either:
+1. Enter a topic like 'Spanish vocabulary for travel'
+2. Paste text from their notes or textbook
+
+Send to GPT-5 Mini and ask it to generate 10 flashcards as
+JSON with 'question' and 'answer' fields. Display them in a
+flip-card interface - click to reveal the answer. Track how
+many they got right/wrong in a study session. Use spaced
+repetition: cards they got wrong appear more often. Save
+flashcard sets to 'flashcard_sets' collection. Add a 'Quiz
+Me' mode that uses text-to-speech to read questions aloud."</code></pre>
+    </div>
 
     <h2>Next Steps</h2>
     <ul>
