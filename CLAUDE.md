@@ -54,3 +54,23 @@ Two Cloudflare Workers:
 5. CLI uploads files directly to R2 in parallel
 6. CLI calls `POST /deploy/:id/finalize`
 7. CLI writes CLAUDE.md template to user's project
+
+## Sales Site (site/)
+
+The marketing site at itsalive.co lives in the `site/` directory and auto-deploys on git push.
+
+**When creating new pages:**
+- Always add Open Graph tags for social sharing cards
+- Use this template in the `<head>`:
+```html
+<!-- Open Graph -->
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://itsalive.co/PAGE_PATH/">
+<meta property="og:title" content="PAGE_TITLE - itsalive.co">
+<meta property="og:description" content="PAGE_DESCRIPTION">
+<meta property="og:image" content="https://itsalive.co/og-image.png">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="PAGE_TITLE - itsalive.co">
+<meta name="twitter:description" content="PAGE_DESCRIPTION">
+<meta name="twitter:image" content="https://itsalive.co/og-image.png">
+```
