@@ -18,6 +18,19 @@
   <meta name="twitter:image" content="https://itsalive.co/og-image.png">
 
   <link rel="stylesheet" href="/styles.css">
+  <style>
+    .prompt-card {
+      background: #111;
+      border: 1px solid #333;
+      border-radius: 8px;
+      padding: 1.5rem;
+      margin: 1rem 0;
+    }
+    .prompt-card h3 {
+      margin-top: 0;
+      color: #4ade80;
+    }
+  </style>
 </head>
 <body>
   <nav>
@@ -38,6 +51,8 @@
   <article class="guide-article">
     <p>Want users to sign in to your app? With itsalive.co, authentication is built in. Users enter their email, click a link, and they're logged in. No password management, no OAuth setup.</p>
 
+    <p><strong>Prerequisite:</strong> Run <code>npx itsalive</code> in your project first. This creates an <code>ITSALIVE.md</code> file that teaches Claude how to use the auth APIs.</p>
+
     <h2>How It Works</h2>
     <ol>
       <li>User enters their email</li>
@@ -46,120 +61,92 @@
       <li>They're logged in with a session cookie</li>
     </ol>
 
-    <h2>Triggering Login</h2>
-    <p>Call the login endpoint with the user's email:</p>
-    <pre><code>async function login(email) {
-  const response = await fetch('/_auth/login', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email })
-  });
+    <h2>Tell Claude What You Need</h2>
+    <p>Just describe the authentication behavior you want. Here are some examples:</p>
 
-  if (response.ok) {
-    alert('Check your email for a login link!');
-  }
-}</code></pre>
+    <div class="prompt-card">
+      <h3>Basic Login</h3>
+      <p><strong>Ask Claude:</strong></p>
+      <pre><code>"Add a login page to my app. Show an email input field and a
+'Send Login Link' button. When they submit, send a magic link
+to their email. Show a message telling them to check their inbox."</code></pre>
+    </div>
 
-    <h2>Checking Login Status</h2>
-    <p>See if the current user is logged in:</p>
-    <pre><code>async function checkAuth() {
-  const response = await fetch('/_auth/me');
+    <div class="prompt-card">
+      <h3>Login with Redirect</h3>
+      <p><strong>Ask Claude:</strong></p>
+      <pre><code>"Add login to my app. If the user isn't logged in, show a login
+form. After they log in, redirect them to the dashboard page.
+Show their email in the header when they're logged in."</code></pre>
+    </div>
 
-  if (response.ok) {
-    const user = await response.json();
-    console.log('Logged in as:', user.email);
-    return user;
-  } else {
-    console.log('Not logged in');
-    return null;
-  }
-}</code></pre>
+    <div class="prompt-card">
+      <h3>Protected Content</h3>
+      <p><strong>Ask Claude:</strong></p>
+      <pre><code>"Make the app require login. If someone visits without being
+logged in, show the login page. Once logged in, show the main
+app. Add a logout button in the corner."</code></pre>
+    </div>
 
-    <h2>Logging Out</h2>
-    <p>Clear the user's session:</p>
-    <pre><code>async function logout() {
-  await fetch('/_auth/logout', { method: 'POST' });
-  window.location.reload();
-}</code></pre>
+    <div class="prompt-card">
+      <h3>User Profile</h3>
+      <p><strong>Ask Claude:</strong></p>
+      <pre><code>"Add a user profile section that shows the logged-in user's
+email. Include a logout button that signs them out and returns
+to the login page."</code></pre>
+    </div>
 
-    <h2>Complete Example</h2>
-    <p>Here's a simple app with login/logout:</p>
-    <pre><code>&lt;!DOCTYPE html&gt;
-&lt;html&gt;
-&lt;head&gt;
-  &lt;title&gt;My App&lt;/title&gt;
-&lt;/head&gt;
-&lt;body&gt;
-  &lt;div id="app"&gt;&lt;/div&gt;
+    <h2>Example Apps with Authentication</h2>
 
-  &lt;script&gt;
-    const app = document.getElementById('app');
+    <div class="prompt-card">
+      <h3>Personal Journal</h3>
+      <p><strong>Ask Claude:</strong></p>
+      <pre><code>"Build a personal journal app. Users need to log in first.
+Once logged in, they can write journal entries with a title
+and content. Each user only sees their own entries. Save
+entries to the database. Add a logout button."</code></pre>
+    </div>
 
-    async function checkAuth() {
-      const res = await fetch('/_auth/me');
-      if (res.ok) return await res.json();
-      return null;
-    }
+    <div class="prompt-card">
+      <h3>Bookmarks Manager</h3>
+      <p><strong>Ask Claude:</strong></p>
+      <pre><code>"Create a bookmarks app where users save links they want to
+remember. Require login so each person has their own bookmarks.
+Let them add a URL and title, and organize into folders.
+Show their email in the header with a logout option."</code></pre>
+    </div>
 
-    async function login() {
-      const email = document.getElementById('email').value;
-      const res = await fetch('/_auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email })
-      });
-      if (res.ok) {
-        app.innerHTML = '&lt;p&gt;Check your email for a login link!&lt;/p&gt;';
-      }
-    }
+    <div class="prompt-card">
+      <h3>Expense Tracker</h3>
+      <p><strong>Ask Claude:</strong></p>
+      <pre><code>"Build an expense tracker. Users log in with their email,
+then can add expenses with amount, category, and date.
+Show a monthly summary and total. Each user's expenses
+are private to them. Include logout functionality."</code></pre>
+    </div>
 
-    async function logout() {
-      await fetch('/_auth/logout', { method: 'POST' });
-      window.location.reload();
-    }
-
-    async function init() {
-      const user = await checkAuth();
-
-      if (user) {
-        app.innerHTML = \`
-          &lt;h1&gt;Welcome, \${user.email}!&lt;/h1&gt;
-          &lt;button onclick="logout()"&gt;Log Out&lt;/button&gt;
-        \`;
-      } else {
-        app.innerHTML = \`
-          &lt;h1&gt;Please Log In&lt;/h1&gt;
-          &lt;input type="email" id="email" placeholder="your@email.com"&gt;
-          &lt;button onclick="login()"&gt;Send Login Link&lt;/button&gt;
-        \`;
-      }
-    }
-
-    init();
-  &lt;/script&gt;
-&lt;/body&gt;
-&lt;/html&gt;</code></pre>
-
-    <h2>User Data</h2>
-    <p>Once a user is logged in, the <code>/_auth/me</code> endpoint returns:</p>
-    <pre><code>{
-  "email": "user@example.com",
-  "id": "usr_abc123..."
-}</code></pre>
-
-    <h2>Protected Data</h2>
-    <p>Any data you store with the <a href="/guides/add-database/">database API</a> is automatically scoped to the logged-in user. No extra code needed.</p>
+    <h2>What Claude Knows</h2>
+    <p>When you deploy with itsalive, Claude automatically knows:</p>
+    <ul>
+      <li><strong>How to trigger login:</strong> Send email to the magic link endpoint</li>
+      <li><strong>How to check auth:</strong> See if the user is logged in</li>
+      <li><strong>How to get user info:</strong> Retrieve the logged-in user's email and ID</li>
+      <li><strong>How to log out:</strong> Clear the user's session</li>
+      <li><strong>Data scoping:</strong> User data is automatically private to each user</li>
+    </ul>
 
     <h2>Tips</h2>
     <ul>
-      <li><strong>Check auth on load:</strong> Call <code>/_auth/me</code> when your app starts</li>
-      <li><strong>Handle loading state:</strong> Show a spinner while checking auth</li>
-      <li><strong>Redirect after login:</strong> The magic link brings users back to your app automatically</li>
+      <li><strong>Describe the flow:</strong> Tell Claude what happens before and after login</li>
+      <li><strong>Mention the UI:</strong> Say where you want login buttons, user info, etc.</li>
+      <li><strong>Think about states:</strong> What does a logged-out user see vs. a logged-in user?</li>
+      <li><strong>Ask for polish:</strong> "Show a loading spinner while checking login status"</li>
     </ul>
 
     <h2>Next Steps</h2>
     <ul>
       <li><a href="/guides/add-database/">Store user data</a> with the database API</li>
+      <li><a href="/guides/ai/">Add AI features</a> to your authenticated app</li>
       <li><a href="/guides/custom-domains/">Add a custom domain</a> for a professional look</li>
     </ul>
   </article>

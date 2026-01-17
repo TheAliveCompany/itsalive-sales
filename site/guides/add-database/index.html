@@ -18,6 +18,19 @@
   <meta name="twitter:image" content="https://itsalive.co/og-image.png">
 
   <link rel="stylesheet" href="/styles.css">
+  <style>
+    .prompt-card {
+      background: #111;
+      border: 1px solid #333;
+      border-radius: 8px;
+      padding: 1.5rem;
+      margin: 1rem 0;
+    }
+    .prompt-card h3 {
+      margin-top: 0;
+      color: #4ade80;
+    }
+  </style>
 </head>
 <body>
   <nav>
@@ -36,128 +49,130 @@
   </div>
 
   <article class="guide-article">
-    <p>Building an app with Claude Code or another AI assistant? You'll probably need to store data at some point - user preferences, content, application state. With itsalive.co, adding a database is as simple as making a fetch call.</p>
+    <p>Building an app with Claude Code? You'll probably need to store data at some point - user preferences, content, application state. With itsalive.co, adding a database is as simple as telling Claude what to save.</p>
+
+    <p><strong>Prerequisite:</strong> Run <code>npx itsalive</code> in your project first. This creates an <code>ITSALIVE.md</code> file that teaches Claude how to use the database APIs.</p>
 
     <h2>No Setup Required</h2>
-    <p>Unlike traditional databases, there's nothing to configure. No connection strings, no schemas, no migrations. Just start saving and retrieving data.</p>
+    <p>Unlike traditional databases, there's nothing to configure. No connection strings, no schemas, no migrations. Just tell Claude to save data and it works.</p>
 
-    <h2>Saving Data</h2>
-    <p>Use the <code>/_db/</code> endpoint to store any JSON data under a key:</p>
-    <pre><code>// Save data for the current user
-await fetch('/_db/user-preferences', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({
-    theme: 'dark',
-    notifications: true,
-    language: 'en'
-  })
-});</code></pre>
-
-    <h2>Retrieving Data</h2>
-    <p>Fetch your data back with a GET request:</p>
-    <pre><code>const response = await fetch('/_db/user-preferences');
-const data = await response.json();
-console.log(data.theme); // 'dark'</code></pre>
-
-    <h2>Data Scoping</h2>
-    <p>Data is automatically scoped to the logged-in user. This means:</p>
+    <h2>What Claude Knows</h2>
+    <p>When you deploy with itsalive, Claude automatically knows how to:</p>
     <ul>
-      <li>User A's "preferences" key is separate from User B's</li>
-      <li>Users can only access their own data</li>
-      <li>No authentication code needed - it's handled for you</li>
+      <li><strong>Save data:</strong> Store any JSON data under a key</li>
+      <li><strong>Load data:</strong> Retrieve stored data</li>
+      <li><strong>List data:</strong> See what keys exist</li>
+      <li><strong>Delete data:</strong> Remove data you no longer need</li>
+      <li><strong>Scope to users:</strong> Keep each user's data private</li>
+      <li><strong>Make data public:</strong> Share data across all users when needed</li>
     </ul>
 
-    <h2>Public vs Private Data</h2>
-    <p>By default, data is private to each user. For public data (like blog posts or products), use the public prefix:</p>
-    <pre><code>// Save public data (anyone can read)
-await fetch('/_db/public/blog-posts', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify([
-    { title: 'My First Post', content: '...' },
-    { title: 'Another Post', content: '...' }
-  ])
-});</code></pre>
+    <h2>Tell Claude What to Store</h2>
+    <p>Just describe what data you need to save. Here are some examples:</p>
 
-    <h2>Listing Keys</h2>
-    <p>Need to see what keys exist? List them:</p>
-    <pre><code>const response = await fetch('/_db/');
-const keys = await response.json();
-// ['user-preferences', 'saved-items', 'draft-content']</code></pre>
+    <div class="prompt-card">
+      <h3>Save User Preferences</h3>
+      <p><strong>Ask Claude:</strong></p>
+      <pre><code>"Add a settings page where users can choose dark or light mode,
+set their preferred language, and toggle email notifications.
+Save their choices to the database so they persist when they
+come back."</code></pre>
+    </div>
 
-    <h2>Deleting Data</h2>
-    <p>Remove data with a DELETE request:</p>
-    <pre><code>await fetch('/_db/old-data', {
-  method: 'DELETE'
-});</code></pre>
+    <div class="prompt-card">
+      <h3>Store a List of Items</h3>
+      <p><strong>Ask Claude:</strong></p>
+      <pre><code>"Build a reading list app. Users can add books with title and
+author. Save the books to the database. Show the list when
+they visit, and let them mark books as 'read' or delete them."</code></pre>
+    </div>
 
-    <h2>Complete Example</h2>
-    <p>Here's a simple todo app that persists data:</p>
-    <pre><code>&lt;!DOCTYPE html&gt;
-&lt;html&gt;
-&lt;head&gt;
-  &lt;title&gt;My Todos&lt;/title&gt;
-&lt;/head&gt;
-&lt;body&gt;
-  &lt;h1&gt;My Todos&lt;/h1&gt;
-  &lt;input type="text" id="newTodo" placeholder="Add a todo..."&gt;
-  &lt;button onclick="addTodo()"&gt;Add&lt;/button&gt;
-  &lt;ul id="todoList"&gt;&lt;/ul&gt;
+    <div class="prompt-card">
+      <h3>Save Form Submissions</h3>
+      <p><strong>Ask Claude:</strong></p>
+      <pre><code>"Create a contact form with name, email, and message fields.
+When someone submits, save it to the database. Show me a list
+of all submissions on an admin page."</code></pre>
+    </div>
 
-  &lt;script&gt;
-    let todos = [];
+    <div class="prompt-card">
+      <h3>Track User Activity</h3>
+      <p><strong>Ask Claude:</strong></p>
+      <pre><code>"Add a workout logger. Users enter the exercise, reps, and
+weight. Save each workout with the date. Show a history of
+past workouts and let them filter by exercise type."</code></pre>
+    </div>
 
-    // Load todos on page load
-    async function loadTodos() {
-      const res = await fetch('/_db/todos');
-      if (res.ok) {
-        todos = await res.json();
-        render();
-      }
-    }
+    <h2>Example Apps with Database</h2>
 
-    // Save todos to database
-    async function saveTodos() {
-      await fetch('/_db/todos', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(todos)
-      });
-    }
+    <div class="prompt-card">
+      <h3>Todo App</h3>
+      <p><strong>Ask Claude:</strong></p>
+      <pre><code>"Build a todo app where I can add tasks, mark them complete,
+and delete them. Save the tasks to the database so they're
+still there when I refresh the page. Show completed tasks
+in a separate 'Done' section."</code></pre>
+    </div>
 
-    function addTodo() {
-      const input = document.getElementById('newTodo');
-      if (input.value.trim()) {
-        todos.push({ text: input.value, done: false });
-        input.value = '';
-        saveTodos();
-        render();
-      }
-    }
+    <div class="prompt-card">
+      <h3>Recipe Collection</h3>
+      <p><strong>Ask Claude:</strong></p>
+      <pre><code>"Create a recipe app. I want to add recipes with a name,
+ingredients list, and cooking instructions. Save them to
+the database. Let me browse all recipes, search by name,
+and filter by ingredient. Add edit and delete buttons."</code></pre>
+    </div>
 
-    function render() {
-      const list = document.getElementById('todoList');
-      list.innerHTML = todos.map((t, i) =&gt;
-        `&lt;li&gt;${t.text}&lt;/li&gt;`
-      ).join('');
-    }
+    <div class="prompt-card">
+      <h3>Notes App</h3>
+      <p><strong>Ask Claude:</strong></p>
+      <pre><code>"Build a notes app like Apple Notes. Create new notes with a
+title and content (support markdown). Auto-save as I type.
+Show all my notes in a sidebar, sorted by last edited.
+Let me delete notes I don't need anymore."</code></pre>
+    </div>
 
-    loadTodos();
-  &lt;/script&gt;
-&lt;/body&gt;
-&lt;/html&gt;</code></pre>
+    <div class="prompt-card">
+      <h3>Habit Tracker</h3>
+      <p><strong>Ask Claude:</strong></p>
+      <pre><code>"Make a habit tracker. I add habits I want to build (like
+'drink water' or 'exercise'). Each day I check off which
+ones I did. Save everything to the database. Show my current
+streak for each habit and a weekly overview."</code></pre>
+    </div>
+
+    <div class="prompt-card">
+      <h3>Blog with Public Posts</h3>
+      <p><strong>Ask Claude:</strong></p>
+      <pre><code>"Create a simple blog. I log in to write posts with a title
+and content. Save posts as public so anyone can read them
+without logging in. Show posts on the homepage sorted by
+date. Only I can edit or delete posts."</code></pre>
+    </div>
+
+    <h2>Private vs Public Data</h2>
+    <p>By default, data is private to each logged-in user. When you want data that everyone can see (like blog posts or a product catalog), tell Claude:</p>
+
+    <div class="prompt-card">
+      <h3>Public Data</h3>
+      <p><strong>Ask Claude:</strong></p>
+      <pre><code>"Make the posts visible to everyone, not just logged-in users.
+Anyone should be able to read posts without an account."</code></pre>
+    </div>
 
     <h2>Tips</h2>
     <ul>
-      <li><strong>Keep it simple:</strong> Store data as JSON objects or arrays</li>
-      <li><strong>Use descriptive keys:</strong> "user-settings" is better than "data1"</li>
-      <li><strong>Handle errors:</strong> Check response.ok before parsing JSON</li>
+      <li><strong>Describe what persists:</strong> Say "save to the database" or "remember this"</li>
+      <li><strong>Mention when to load:</strong> "Show my saved items when the page loads"</li>
+      <li><strong>Think about updates:</strong> "Let me edit items" or "auto-save as I type"</li>
+      <li><strong>Consider deletion:</strong> "Add a delete button" or "let me clear completed items"</li>
+      <li><strong>Specify sorting:</strong> "Sort by date" or "show newest first"</li>
     </ul>
 
     <h2>Next Steps</h2>
     <ul>
       <li><a href="/guides/authentication/">Add user login</a> to personalize the experience</li>
+      <li><a href="/guides/ai/">Add AI features</a> to analyze or generate content</li>
       <li><a href="/guides/getting-started/">Deploy your app</a> if you haven't already</li>
     </ul>
   </article>
