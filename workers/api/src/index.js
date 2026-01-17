@@ -1898,6 +1898,165 @@ await fetch('/_db/rsvps/guest-' + Date.now(), {
   body: JSON.stringify(rsvp)
 });
 \`\`\`
+
+## AI Integration
+
+Access AI models (Claude, GPT, Gemini) through the itsalive proxy. Apps use prepaid token credits.
+
+### Model Tiers
+- **good**: Cost-effective models for most tasks (Claude Sonnet, GPT-4o-mini, Gemini Flash)
+- **best**: Most capable models for complex tasks (Claude Opus, GPT-4o, Gemini Pro)
+
+### Send a chat request
+\`\`\`javascript
+const res = await fetch('/_ai/chat', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  credentials: 'include',  // or use deploy_token
+  body: JSON.stringify({
+    provider: 'claude',     // 'claude', 'gpt', or 'gemini'
+    tier: 'good',           // 'good' or 'best'
+    messages: [
+      { role: 'user', content: 'What is the capital of France?' }
+    ],
+    system: 'You are a helpful assistant.',  // optional
+    max_tokens: 1024  // optional, default from app settings
+  })
+});
+const { content, usage } = await res.json();
+// content: "The capital of France is Paris."
+// usage: { input_tokens: 15, output_tokens: 12, total_tokens: 27 }
+\`\`\`
+
+### Send an image for analysis (vision)
+\`\`\`javascript
+const res = await fetch('/_ai/chat', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  credentials: 'include',
+  body: JSON.stringify({
+    provider: 'claude',
+    tier: 'good',
+    messages: [{
+      role: 'user',
+      content: [
+        { type: 'text', text: 'What is in this image?' },
+        { type: 'image', url: 'https://example.com/photo.jpg' }
+        // or: { type: 'image', base64: '...', media_type: 'image/jpeg' }
+      ]
+    }]
+  })
+});
+\`\`\`
+
+### Check credit balance
+\`\`\`javascript
+const { balance, lifetime_used } = await fetch('/_ai/credits', {
+  credentials: 'include'
+}).then(r => r.json());
+\`\`\`
+
+### Add credits (owner only)
+\`\`\`javascript
+await fetch('/_ai/credits', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  credentials: 'include',
+  body: JSON.stringify({ amount: 100000 })  // tokens
+});
+\`\`\`
+
+### View usage history
+\`\`\`javascript
+const { items, totals } = await fetch('/_ai/usage', {
+  credentials: 'include'
+}).then(r => r.json());
+// totals: { requests, input_tokens, output_tokens, total_tokens, estimated_cost }
+\`\`\`
+
+### Configure AI settings
+\`\`\`javascript
+await fetch('/_ai/settings', {
+  method: 'PUT',
+  headers: { 'Content-Type': 'application/json' },
+  credentials: 'include',
+  body: JSON.stringify({
+    max_input_tokens: 8192,
+    max_output_tokens: 4096,
+    allowed_tiers: 'good,best',  // or just 'good'
+    enabled: true
+  })
+});
+\`\`\`
+
+### Generate images with DALL-E
+\`\`\`javascript
+const res = await fetch('/_ai/image', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  credentials: 'include',
+  body: JSON.stringify({
+    prompt: 'A cute robot waving hello, digital art style',
+    model: 'dall-e-3',         // 'dall-e-2' or 'dall-e-3'
+    size: '1024x1024',         // dall-e-2: 256x256, 512x512, 1024x1024
+                               // dall-e-3: 1024x1024, 1024x1792, 1792x1024
+    quality: 'standard',       // dall-e-3 only: 'standard' or 'hd'
+    n: 1                       // number of images (dall-e-3 max: 1, dall-e-2 max: 10)
+  })
+});
+const { images, credits_used } = await res.json();
+// images: [{ url: 'https://...', revised_prompt: '...' }]
+\`\`\`
+
+### Transcribe audio with Whisper
+\`\`\`javascript
+const formData = new FormData();
+formData.append('file', audioFile);
+formData.append('language', 'en');  // optional: ISO 639-1 code
+formData.append('response_format', 'json');  // json, text, srt, vtt
+
+const res = await fetch('/_ai/transcribe', {
+  method: 'POST',
+  credentials: 'include',
+  body: formData
+});
+const { text, duration, credits_used } = await res.json();
+\`\`\`
+
+### Text-to-speech
+\`\`\`javascript
+const res = await fetch('/_ai/tts', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  credentials: 'include',
+  body: JSON.stringify({
+    input: 'Hello! This is a test of text to speech.',
+    model: 'tts-1',            // 'tts-1' or 'tts-1-hd' (higher quality)
+    voice: 'nova',             // alloy, echo, fable, onyx, nova, shimmer
+    response_format: 'mp3',    // mp3, opus, aac, flac, wav, pcm
+    speed: 1.0                 // 0.25 to 4.0
+  })
+});
+// Response is audio binary
+const audioBlob = await res.blob();
+const audioUrl = URL.createObjectURL(audioBlob);
+\`\`\`
+
+### Credit costs
+- **Chat (good tier)**: Claude ~75 tokens/credit, GPT ~1800/credit, Gemini ~1500/credit
+- **Chat (best tier)**: Claude ~15 tokens/credit, GPT ~135/credit, Gemini ~100/credit
+- **Image generation**: 20-150 credits per image depending on model/size/quality
+- **Transcription**: ~10 credits per minute of audio
+- **TTS**: ~20 credits per 1000 characters (40 for HD)
+
+### Error handling
+\`\`\`javascript
+const res = await fetch('/_ai/chat', { ... });
+if (res.status === 402) {
+  const { balance, required } = await res.json();
+  console.log('Insufficient credits. Balance:', balance, 'Required:', required);
+}
+\`\`\`
 `;
 
   return new Response(template, {
@@ -4412,6 +4571,1161 @@ router.delete('/webhooks/:id', async (request, env) => {
   await env.DB.prepare('DELETE FROM webhooks WHERE id = ? AND app_subdomain = ?').bind(id, subdomain).run();
 
   return { success: true };
+});
+
+// ============ AI ENDPOINTS ============
+
+// Model mappings for each provider
+const AI_MODELS = {
+  claude: {
+    good: 'claude-sonnet-4-20250514',
+    best: 'claude-opus-4-5-20251101',
+  },
+  gpt: {
+    good: 'gpt-5-mini',
+    best: 'gpt-5.2',
+  },
+  gemini: {
+    good: 'gemini-2.5-flash',
+    best: 'gemini-2.5-pro',
+  },
+};
+
+// Approximate cost per 1M tokens (for tracking)
+const TOKEN_COSTS = {
+  'claude-sonnet-4-20250514': { input: 3.0, output: 15.0 },
+  'claude-opus-4-5-20251101': { input: 15.0, output: 75.0 },
+  'gpt-5-mini': { input: 0.15, output: 0.60 },
+  'gpt-5.2': { input: 1.75, output: 14.0 },
+  'gemini-2.5-flash': { input: 0.15, output: 0.60 },
+  'gemini-2.5-pro': { input: 1.25, output: 10.00 },
+};
+
+// Tokens per credit by tier and provider (1 credit = $0.001)
+// Targeting ~30% margin on each
+const TOKENS_PER_CREDIT = {
+  claude: {
+    good: 75,   // Sonnet: ~$9/1M blended → 75 tokens/credit
+    best: 15,   // Opus: ~$45/1M blended → 15 tokens/credit
+  },
+  gpt: {
+    good: 1800, // gpt-4o-mini: ~$0.375/1M blended → 1800 tokens/credit
+    best: 135,  // gpt-4o: ~$5.20/1M blended → 135 tokens/credit
+  },
+  gemini: {
+    good: 1500, // gemini-2.5-flash: ~$0.45/1M blended → 1500 tokens/credit
+    best: 100,  // gemini-2.5-pro: ~$7.08/1M blended → 100 tokens/credit
+  },
+};
+
+// Helper to convert tokens to credits
+function tokensToCredits(tokens, provider, tier) {
+  const providerRates = TOKENS_PER_CREDIT[provider] || TOKENS_PER_CREDIT.claude;
+  const rate = providerRates[tier] || providerRates.good;
+  return Math.ceil(tokens / rate);
+}
+
+// Helper to get AI settings for an app
+async function getAiSettings(env, subdomain) {
+  const settings = await env.DB.prepare(
+    'SELECT * FROM ai_settings WHERE app_subdomain = ?'
+  ).bind(subdomain).first();
+
+  return settings || {
+    max_input_tokens: 4096,
+    max_output_tokens: 4096,
+    allowed_tiers: 'good,best',
+    enabled: 1,
+  };
+}
+
+// Helper to get owner_id from subdomain
+async function getOwnerIdFromSubdomain(env, subdomain) {
+  const app = await env.DB.prepare(
+    'SELECT owner_id FROM apps WHERE subdomain = ?'
+  ).bind(subdomain).first();
+  return app?.owner_id;
+}
+
+// Helper to check and deduct credits (owner-based)
+async function checkAndDeductCredits(env, subdomain, creditsNeeded) {
+  const ownerId = await getOwnerIdFromSubdomain(env, subdomain);
+  if (!ownerId) {
+    return { success: false, balance: 0, required: creditsNeeded, error: 'App not found' };
+  }
+
+  const credits = await env.DB.prepare(
+    'SELECT balance FROM owner_credits WHERE owner_id = ?'
+  ).bind(ownerId).first();
+
+  const balance = credits?.balance || 0;
+
+  if (balance < creditsNeeded) {
+    return { success: false, balance, required: creditsNeeded };
+  }
+
+  // Deduct credits
+  await env.DB.prepare(`
+    UPDATE owner_credits
+    SET balance = balance - ?, lifetime_used = lifetime_used + ?, updated_at = datetime('now')
+    WHERE owner_id = ?
+  `).bind(creditsNeeded, creditsNeeded, ownerId).run();
+
+  return { success: true, balance: balance - creditsNeeded, owner_id: ownerId };
+}
+
+// Helper to refund credits if request fails (owner-based)
+async function refundCredits(env, subdomain, credits) {
+  const ownerId = await getOwnerIdFromSubdomain(env, subdomain);
+  if (!ownerId) return;
+
+  await env.DB.prepare(`
+    UPDATE owner_credits
+    SET balance = balance + ?, lifetime_used = lifetime_used - ?, updated_at = datetime('now')
+    WHERE owner_id = ?
+  `).bind(credits, credits, ownerId).run();
+}
+
+// POST /ai/chat - Send a chat request to an AI provider
+router.post('/ai/chat', async (request, env) => {
+  const subdomain = getSubdomain(request);
+  if (!subdomain) {
+    return new Response(JSON.stringify({ error: 'Invalid origin' }), { status: 400 });
+  }
+
+  const body = await request.json();
+  const { provider = 'claude', tier = 'good', messages, system, max_tokens, deploy_token } = body;
+
+  // Auth: deploy_token or logged-in user
+  const user = await getSession(request, env);
+  const validToken = deploy_token && await validateDeployToken(env, subdomain, deploy_token);
+
+  if (!user && !validToken) {
+    return new Response(JSON.stringify({ error: 'Authentication required' }), { status: 401 });
+  }
+
+  // Validate provider
+  if (!AI_MODELS[provider]) {
+    return new Response(JSON.stringify({ error: `Invalid provider. Available: ${Object.keys(AI_MODELS).join(', ')}` }), { status: 400 });
+  }
+
+  // Validate tier
+  if (!['good', 'best'].includes(tier)) {
+    return new Response(JSON.stringify({ error: 'Invalid tier. Use "good" or "best"' }), { status: 400 });
+  }
+
+  // Validate messages
+  if (!messages || !Array.isArray(messages) || messages.length === 0) {
+    return new Response(JSON.stringify({ error: 'messages array is required' }), { status: 400 });
+  }
+
+  // Get AI settings for this app
+  const settings = await getAiSettings(env, subdomain);
+
+  if (!settings.enabled) {
+    return new Response(JSON.stringify({ error: 'AI is disabled for this app' }), { status: 403 });
+  }
+
+  // Check if tier is allowed
+  const allowedTiers = settings.allowed_tiers.split(',');
+  if (!allowedTiers.includes(tier)) {
+    return new Response(JSON.stringify({ error: `Tier "${tier}" is not enabled for this app` }), { status: 403 });
+  }
+
+  // Get the model
+  const model = AI_MODELS[provider][tier];
+
+  // Calculate max tokens (use provided or default)
+  const outputTokens = Math.min(max_tokens || settings.max_output_tokens, settings.max_output_tokens);
+
+  // Estimate input tokens (rough: 4 chars per token)
+  let inputText = system || '';
+  let hasVision = false;
+  for (const msg of messages) {
+    if (typeof msg.content === 'string') {
+      inputText += msg.content;
+    } else if (Array.isArray(msg.content)) {
+      // Multimodal message
+      for (const part of msg.content) {
+        if (part.type === 'text') {
+          inputText += part.text || '';
+        } else if (part.type === 'image') {
+          hasVision = true;
+          // Images cost roughly 1000 tokens for a typical image
+          inputText += 'X'.repeat(4000);
+        }
+      }
+    }
+  }
+  const estimatedInputTokens = Math.ceil(inputText.length / 4);
+
+  // Check input token limit
+  if (estimatedInputTokens > settings.max_input_tokens) {
+    return new Response(JSON.stringify({
+      error: `Input too large. Estimated ${estimatedInputTokens} tokens, max ${settings.max_input_tokens}`
+    }), { status: 400 });
+  }
+
+  // Estimate total tokens and convert to credits
+  const estimatedTotalTokens = estimatedInputTokens + outputTokens;
+  const estimatedCredits = tokensToCredits(estimatedTotalTokens, provider, tier);
+
+  // Check and deduct credits
+  const creditCheck = await checkAndDeductCredits(env, subdomain, estimatedCredits);
+  if (!creditCheck.success) {
+    return new Response(JSON.stringify({
+      error: 'Insufficient credits',
+      balance: creditCheck.balance,
+      required: creditCheck.required,
+      tokens_per_credit: TOKENS_PER_CREDIT[provider]?.[tier] || TOKENS_PER_CREDIT.claude[tier],
+    }), { status: 402 });
+  }
+
+  // Make the API call based on provider
+  let result;
+  let actualInputTokens = 0;
+  let actualOutputTokens = 0;
+
+  try {
+    if (provider === 'claude') {
+      result = await callClaude(env, model, messages, system, outputTokens);
+      actualInputTokens = result.usage?.input_tokens || estimatedInputTokens;
+      actualOutputTokens = result.usage?.output_tokens || 0;
+    } else if (provider === 'gpt') {
+      result = await callGPT(env, model, messages, system, outputTokens);
+      actualInputTokens = result.usage?.prompt_tokens || estimatedInputTokens;
+      actualOutputTokens = result.usage?.completion_tokens || 0;
+    } else if (provider === 'gemini') {
+      result = await callGemini(env, model, messages, system, outputTokens);
+      actualInputTokens = result.usage?.promptTokenCount || estimatedInputTokens;
+      actualOutputTokens = result.usage?.candidatesTokenCount || 0;
+    } else {
+      throw new Error(`Provider ${provider} not implemented yet`);
+    }
+  } catch (error) {
+    // Refund the estimated credits on failure
+    await refundCredits(env, subdomain, estimatedCredits);
+
+    return new Response(JSON.stringify({
+      error: 'AI request failed',
+      details: error.message,
+    }), { status: 500 });
+  }
+
+  // Calculate actual token usage and convert to credits
+  const actualTotalTokens = actualInputTokens + actualOutputTokens;
+  const actualCredits = tokensToCredits(actualTotalTokens, provider, tier);
+  const creditDifference = estimatedCredits - actualCredits;
+
+  if (creditDifference > 0) {
+    // Refund the difference if we overestimated
+    await refundCredits(env, subdomain, creditDifference);
+  } else if (creditDifference < 0) {
+    // Deduct more if we underestimated
+    await checkAndDeductCredits(env, subdomain, -creditDifference);
+  }
+
+  // Calculate estimated cost for logging
+  const costs = TOKEN_COSTS[model] || { input: 0, output: 0 };
+  const estimatedCost = (actualInputTokens * costs.input + actualOutputTokens * costs.output) / 1000000;
+
+  // Log usage
+  const usageId = generateId();
+  await env.DB.prepare(`
+    INSERT INTO ai_usage (id, app_subdomain, user_id, provider, tier, model, input_tokens, output_tokens, total_tokens, credits_used, has_vision, estimated_cost_usd)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).bind(
+    usageId,
+    subdomain,
+    user?.id || null,
+    provider,
+    tier,
+    model,
+    actualInputTokens,
+    actualOutputTokens,
+    actualTotalTokens,
+    actualCredits,
+    hasVision ? 1 : 0,
+    estimatedCost
+  ).run();
+
+  // Return the response
+  return {
+    content: result.content,
+    model,
+    usage: {
+      input_tokens: actualInputTokens,
+      output_tokens: actualOutputTokens,
+      total_tokens: actualTotalTokens,
+      credits_used: actualCredits,
+      tokens_per_credit: TOKENS_PER_CREDIT[provider]?.[tier] || TOKENS_PER_CREDIT.claude[tier],
+    },
+  };
+});
+
+// Helper to call Claude API
+async function callClaude(env, model, messages, system, maxTokens) {
+  // Transform messages to Claude format
+  const claudeMessages = messages.map(msg => {
+    // Handle multimodal content
+    if (Array.isArray(msg.content)) {
+      const content = msg.content.map(part => {
+        if (part.type === 'text') {
+          return { type: 'text', text: part.text };
+        } else if (part.type === 'image') {
+          // Support base64 or URL
+          if (part.source) {
+            return {
+              type: 'image',
+              source: part.source,
+            };
+          } else if (part.url) {
+            return {
+              type: 'image',
+              source: {
+                type: 'url',
+                url: part.url,
+              },
+            };
+          } else if (part.base64) {
+            return {
+              type: 'image',
+              source: {
+                type: 'base64',
+                media_type: part.media_type || 'image/jpeg',
+                data: part.base64,
+              },
+            };
+          }
+        }
+        return part;
+      });
+      return { role: msg.role, content };
+    }
+
+    return { role: msg.role, content: msg.content };
+  });
+
+  const requestBody = {
+    model,
+    max_tokens: maxTokens,
+    messages: claudeMessages,
+  };
+
+  if (system) {
+    requestBody.system = system;
+  }
+
+  const response = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': env.ANTHROPIC_API_KEY,
+      'anthropic-version': '2023-06-01',
+    },
+    body: JSON.stringify(requestBody),
+  });
+
+  if (!response.ok) {
+    const error = await response.text();
+    throw new Error(`Claude API error: ${response.status} - ${error}`);
+  }
+
+  const data = await response.json();
+
+  // Extract text content
+  let content = '';
+  if (data.content && Array.isArray(data.content)) {
+    content = data.content
+      .filter(block => block.type === 'text')
+      .map(block => block.text)
+      .join('\n');
+  }
+
+  return {
+    content,
+    usage: data.usage,
+  };
+}
+
+// Helper to call OpenAI GPT API
+async function callGPT(env, model, messages, system, maxTokens) {
+  // Transform messages to OpenAI format
+  const gptMessages = [];
+
+  // Add system message if provided
+  if (system) {
+    gptMessages.push({ role: 'system', content: system });
+  }
+
+  // Transform user/assistant messages
+  for (const msg of messages) {
+    if (Array.isArray(msg.content)) {
+      // Multimodal content
+      const content = msg.content.map(part => {
+        if (part.type === 'text') {
+          return { type: 'text', text: part.text };
+        } else if (part.type === 'image') {
+          // Support URL or base64
+          if (part.url) {
+            return {
+              type: 'image_url',
+              image_url: { url: part.url },
+            };
+          } else if (part.base64) {
+            return {
+              type: 'image_url',
+              image_url: {
+                url: `data:${part.media_type || 'image/jpeg'};base64,${part.base64}`,
+              },
+            };
+          } else if (part.source?.type === 'base64') {
+            return {
+              type: 'image_url',
+              image_url: {
+                url: `data:${part.source.media_type || 'image/jpeg'};base64,${part.source.data}`,
+              },
+            };
+          }
+        }
+        return part;
+      });
+      gptMessages.push({ role: msg.role, content });
+    } else {
+      gptMessages.push({ role: msg.role, content: msg.content });
+    }
+  }
+
+  const requestBody = {
+    model,
+    max_completion_tokens: maxTokens,
+    messages: gptMessages,
+  };
+
+  const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${env.OPENAI_API_KEY}`,
+    },
+    body: JSON.stringify(requestBody),
+  });
+
+  if (!response.ok) {
+    const error = await response.text();
+    throw new Error(`OpenAI API error: ${response.status} - ${error}`);
+  }
+
+  const data = await response.json();
+
+  // Extract content from the response
+  const content = data.choices?.[0]?.message?.content || '';
+
+  return {
+    content,
+    usage: data.usage,
+  };
+}
+
+// Helper to call Google Gemini API
+async function callGemini(env, model, messages, system, maxTokens) {
+  // Transform messages to Gemini format
+  const contents = [];
+
+  // Add system instruction if provided (Gemini handles this differently)
+  let systemInstruction = system;
+
+  // Transform user/assistant messages
+  for (const msg of messages) {
+    const role = msg.role === 'assistant' ? 'model' : 'user';
+
+    if (Array.isArray(msg.content)) {
+      // Multimodal content
+      const parts = msg.content.map(part => {
+        if (part.type === 'text') {
+          return { text: part.text };
+        } else if (part.type === 'image') {
+          // Support URL or base64
+          if (part.base64) {
+            return {
+              inlineData: {
+                mimeType: part.media_type || 'image/jpeg',
+                data: part.base64,
+              },
+            };
+          } else if (part.source?.type === 'base64') {
+            return {
+              inlineData: {
+                mimeType: part.source.media_type || 'image/jpeg',
+                data: part.source.data,
+              },
+            };
+          }
+          // URL-based images need to be fetched and converted to base64
+          // For now, skip URL images (could add fetch support later)
+          return { text: '[Image URL not supported - use base64]' };
+        }
+        return { text: '' };
+      });
+      contents.push({ role, parts });
+    } else {
+      contents.push({ role, parts: [{ text: msg.content }] });
+    }
+  }
+
+  const requestBody = {
+    contents,
+    generationConfig: {
+      maxOutputTokens: maxTokens,
+    },
+  };
+
+  // Add system instruction if provided
+  if (systemInstruction) {
+    requestBody.systemInstruction = { parts: [{ text: systemInstruction }] };
+  }
+
+  const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${env.GEMINI_API_KEY}`;
+
+  const response = await fetch(apiUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(requestBody),
+  });
+
+  if (!response.ok) {
+    const error = await response.text();
+    throw new Error(`Gemini API error: ${response.status} - ${error}`);
+  }
+
+  const data = await response.json();
+
+  // Extract content from the response
+  let content = '';
+  if (data.candidates?.[0]?.content?.parts) {
+    content = data.candidates[0].content.parts
+      .filter(part => part.text)
+      .map(part => part.text)
+      .join('');
+  }
+
+  return {
+    content,
+    usage: data.usageMetadata,
+  };
+}
+
+// Image generation costs (credits per image)
+const IMAGE_GENERATION_COSTS = {
+  'dall-e-2': {
+    '256x256': 20,    // ~$0.016 → 20 credits
+    '512x512': 22,    // ~$0.018 → 22 credits
+    '1024x1024': 25,  // ~$0.020 → 25 credits
+  },
+  'dall-e-3': {
+    '1024x1024': 50,      // ~$0.040 → 50 credits (standard)
+    '1024x1792': 100,     // ~$0.080 → 100 credits (standard)
+    '1792x1024': 100,     // ~$0.080 → 100 credits (standard)
+    '1024x1024-hd': 100,  // ~$0.080 → 100 credits (hd)
+    '1024x1792-hd': 150,  // ~$0.120 → 150 credits (hd)
+    '1792x1024-hd': 150,  // ~$0.120 → 150 credits (hd)
+  },
+};
+
+// POST /ai/image - Generate images with DALL-E
+router.post('/ai/image', async (request, env) => {
+  const subdomain = getSubdomain(request);
+  if (!subdomain) {
+    return new Response(JSON.stringify({ error: 'Invalid origin' }), { status: 400 });
+  }
+
+  const { deploy_token, prompt, model = 'dall-e-3', size = '1024x1024', quality = 'standard', n = 1 } = await request.json();
+
+  // Auth check
+  const user = await getSession(request, env);
+  const validToken = deploy_token && await validateDeployToken(env, subdomain, deploy_token);
+
+  if (!user && !validToken) {
+    return new Response(JSON.stringify({ error: 'Authentication required. Provide deploy_token or be logged in.' }), { status: 401 });
+  }
+
+  // Validate prompt
+  if (!prompt || typeof prompt !== 'string' || prompt.trim().length === 0) {
+    return new Response(JSON.stringify({ error: 'prompt is required' }), { status: 400 });
+  }
+
+  // Validate model
+  if (!['dall-e-2', 'dall-e-3'].includes(model)) {
+    return new Response(JSON.stringify({ error: 'Invalid model. Use "dall-e-2" or "dall-e-3"' }), { status: 400 });
+  }
+
+  // Validate size based on model
+  const validSizes = model === 'dall-e-2'
+    ? ['256x256', '512x512', '1024x1024']
+    : ['1024x1024', '1024x1792', '1792x1024'];
+
+  if (!validSizes.includes(size)) {
+    return new Response(JSON.stringify({ error: `Invalid size for ${model}. Valid sizes: ${validSizes.join(', ')}` }), { status: 400 });
+  }
+
+  // Validate quality (only for dall-e-3)
+  if (model === 'dall-e-3' && !['standard', 'hd'].includes(quality)) {
+    return new Response(JSON.stringify({ error: 'Invalid quality. Use "standard" or "hd"' }), { status: 400 });
+  }
+
+  // Validate n (number of images)
+  const maxImages = model === 'dall-e-3' ? 1 : 10;
+  if (n < 1 || n > maxImages) {
+    return new Response(JSON.stringify({ error: `n must be between 1 and ${maxImages} for ${model}` }), { status: 400 });
+  }
+
+  // Calculate credits needed
+  let sizeKey = size;
+  if (model === 'dall-e-3' && quality === 'hd') {
+    sizeKey = `${size}-hd`;
+  }
+  const creditsPerImage = IMAGE_GENERATION_COSTS[model]?.[sizeKey] || 50;
+  const totalCredits = creditsPerImage * n;
+
+  // Check and deduct credits
+  const creditCheck = await checkAndDeductCredits(env, subdomain, totalCredits);
+  if (!creditCheck.success) {
+    return new Response(JSON.stringify({
+      error: 'Insufficient credits',
+      balance: creditCheck.balance,
+      required: totalCredits,
+    }), { status: 402 });
+  }
+
+  try {
+    const requestBody = {
+      model,
+      prompt: prompt.substring(0, model === 'dall-e-3' ? 4000 : 1000),
+      n,
+      size,
+      response_format: 'url',
+    };
+
+    if (model === 'dall-e-3') {
+      requestBody.quality = quality;
+    }
+
+    const response = await fetch('https://api.openai.com/v1/images/generations', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${env.OPENAI_API_KEY}`,
+      },
+      body: JSON.stringify(requestBody),
+    });
+
+    if (!response.ok) {
+      const error = await response.text();
+      // Refund credits on failure
+      await refundCredits(env, subdomain, totalCredits);
+      throw new Error(`DALL-E API error: ${response.status} - ${error}`);
+    }
+
+    const data = await response.json();
+
+    // Log usage
+    const usageId = generateId();
+    await env.DB.prepare(`
+      INSERT INTO ai_usage (id, app_subdomain, user_id, provider, tier, model, input_tokens, output_tokens, total_tokens, credits_used, has_vision, estimated_cost_usd)
+      VALUES (?, ?, ?, 'openai', 'image', ?, 0, 0, 0, ?, 0, ?)
+    `).bind(
+      usageId,
+      subdomain,
+      user?.id || null,
+      model,
+      totalCredits,
+      totalCredits * 0.001
+    ).run();
+
+    return {
+      images: data.data.map(img => ({
+        url: img.url,
+        revised_prompt: img.revised_prompt,
+      })),
+      model,
+      size,
+      quality: model === 'dall-e-3' ? quality : undefined,
+      credits_used: totalCredits,
+    };
+  } catch (error) {
+    return new Response(JSON.stringify({
+      error: 'Image generation failed',
+      details: error.message,
+    }), { status: 500 });
+  }
+});
+
+// POST /ai/transcribe - Transcribe audio with Whisper
+router.post('/ai/transcribe', async (request, env) => {
+  const subdomain = getSubdomain(request);
+  if (!subdomain) {
+    return new Response(JSON.stringify({ error: 'Invalid origin' }), { status: 400 });
+  }
+
+  const formData = await request.formData();
+  const file = formData.get('file');
+  const deploy_token = formData.get('deploy_token');
+  const language = formData.get('language'); // Optional: ISO 639-1 code
+  const responseFormat = formData.get('response_format') || 'json'; // json, text, srt, verbose_json, vtt
+
+  // Auth check
+  const user = await getSession(request, env);
+  const validToken = deploy_token && await validateDeployToken(env, subdomain, deploy_token);
+
+  if (!user && !validToken) {
+    return new Response(JSON.stringify({ error: 'Authentication required. Provide deploy_token or be logged in.' }), { status: 401 });
+  }
+
+  // Validate file
+  if (!file) {
+    return new Response(JSON.stringify({ error: 'No audio file provided' }), { status: 400 });
+  }
+
+  // Validate file type
+  const allowedTypes = [
+    'audio/flac', 'audio/m4a', 'audio/mp3', 'audio/mp4', 'audio/mpeg',
+    'audio/mpga', 'audio/oga', 'audio/ogg', 'audio/wav', 'audio/webm',
+    'video/mp4', 'video/mpeg', 'video/webm'
+  ];
+  const fileType = file.type.toLowerCase();
+  if (!allowedTypes.some(t => fileType.includes(t.split('/')[1]))) {
+    return new Response(JSON.stringify({
+      error: 'Invalid file type. Supported: flac, m4a, mp3, mp4, mpeg, mpga, oga, ogg, wav, webm'
+    }), { status: 400 });
+  }
+
+  // Size limit: 25MB (OpenAI limit)
+  const maxSize = 25 * 1024 * 1024;
+  if (file.size > maxSize) {
+    return new Response(JSON.stringify({ error: 'File too large. Maximum 25MB.' }), { status: 400 });
+  }
+
+  // Estimate credits: ~10 credits per MB (rough estimate based on typical audio compression)
+  // Whisper is $0.006/minute, assuming ~1MB ≈ 1 minute for typical audio
+  const estimatedCredits = Math.max(10, Math.ceil(file.size / (1024 * 1024)) * 10);
+
+  // Check and deduct credits
+  const creditCheck = await checkAndDeductCredits(env, subdomain, estimatedCredits);
+  if (!creditCheck.success) {
+    return new Response(JSON.stringify({
+      error: 'Insufficient credits',
+      balance: creditCheck.balance,
+      required: estimatedCredits,
+    }), { status: 402 });
+  }
+
+  try {
+    // Build form data for OpenAI
+    const openaiFormData = new FormData();
+    openaiFormData.append('file', file, file.name || 'audio.mp3');
+    openaiFormData.append('model', 'whisper-1');
+    openaiFormData.append('response_format', responseFormat);
+
+    if (language) {
+      openaiFormData.append('language', language);
+    }
+
+    const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${env.OPENAI_API_KEY}`,
+      },
+      body: openaiFormData,
+    });
+
+    if (!response.ok) {
+      const error = await response.text();
+      await refundCredits(env, subdomain, estimatedCredits);
+      throw new Error(`Whisper API error: ${response.status} - ${error}`);
+    }
+
+    let result;
+    if (responseFormat === 'text' || responseFormat === 'srt' || responseFormat === 'vtt') {
+      result = { text: await response.text() };
+    } else {
+      result = await response.json();
+    }
+
+    // Calculate actual duration if available (verbose_json provides it)
+    let actualCredits = estimatedCredits;
+    if (result.duration) {
+      // $0.006 per minute → 10 credits per minute
+      actualCredits = Math.max(1, Math.ceil(result.duration / 60) * 10);
+      const creditDiff = estimatedCredits - actualCredits;
+      if (creditDiff > 0) {
+        await refundCredits(env, subdomain, creditDiff);
+      }
+    }
+
+    // Log usage
+    const usageId = generateId();
+    await env.DB.prepare(`
+      INSERT INTO ai_usage (id, app_subdomain, user_id, provider, tier, model, input_tokens, output_tokens, total_tokens, credits_used, has_vision, estimated_cost_usd)
+      VALUES (?, ?, ?, 'openai', 'transcription', 'whisper-1', 0, 0, 0, ?, 0, ?)
+    `).bind(
+      usageId,
+      subdomain,
+      user?.id || null,
+      actualCredits,
+      actualCredits * 0.001
+    ).run();
+
+    return {
+      text: result.text,
+      duration: result.duration,
+      language: result.language,
+      credits_used: actualCredits,
+    };
+  } catch (error) {
+    return new Response(JSON.stringify({
+      error: 'Transcription failed',
+      details: error.message,
+    }), { status: 500 });
+  }
+});
+
+// TTS costs (credits per 1K characters)
+const TTS_COSTS = {
+  'tts-1': 20,     // $0.015/1K chars → 20 credits
+  'tts-1-hd': 40,  // $0.030/1K chars → 40 credits
+};
+
+// POST /ai/tts - Text to speech with OpenAI TTS
+router.post('/ai/tts', async (request, env) => {
+  const subdomain = getSubdomain(request);
+  if (!subdomain) {
+    return new Response(JSON.stringify({ error: 'Invalid origin' }), { status: 400 });
+  }
+
+  const { deploy_token, input, model = 'tts-1', voice = 'alloy', response_format = 'mp3', speed = 1.0 } = await request.json();
+
+  // Auth check
+  const user = await getSession(request, env);
+  const validToken = deploy_token && await validateDeployToken(env, subdomain, deploy_token);
+
+  if (!user && !validToken) {
+    return new Response(JSON.stringify({ error: 'Authentication required. Provide deploy_token or be logged in.' }), { status: 401 });
+  }
+
+  // Validate input
+  if (!input || typeof input !== 'string' || input.trim().length === 0) {
+    return new Response(JSON.stringify({ error: 'input text is required' }), { status: 400 });
+  }
+
+  // OpenAI TTS has a 4096 character limit
+  if (input.length > 4096) {
+    return new Response(JSON.stringify({ error: 'Input too long. Maximum 4096 characters.' }), { status: 400 });
+  }
+
+  // Validate model
+  if (!['tts-1', 'tts-1-hd'].includes(model)) {
+    return new Response(JSON.stringify({ error: 'Invalid model. Use "tts-1" or "tts-1-hd"' }), { status: 400 });
+  }
+
+  // Validate voice
+  const validVoices = ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'];
+  if (!validVoices.includes(voice)) {
+    return new Response(JSON.stringify({ error: `Invalid voice. Valid voices: ${validVoices.join(', ')}` }), { status: 400 });
+  }
+
+  // Validate response format
+  const validFormats = ['mp3', 'opus', 'aac', 'flac', 'wav', 'pcm'];
+  if (!validFormats.includes(response_format)) {
+    return new Response(JSON.stringify({ error: `Invalid format. Valid formats: ${validFormats.join(', ')}` }), { status: 400 });
+  }
+
+  // Validate speed
+  if (speed < 0.25 || speed > 4.0) {
+    return new Response(JSON.stringify({ error: 'Speed must be between 0.25 and 4.0' }), { status: 400 });
+  }
+
+  // Calculate credits (per 1K characters)
+  const creditsPerK = TTS_COSTS[model] || 20;
+  const totalCredits = Math.max(1, Math.ceil(input.length / 1000) * creditsPerK);
+
+  // Check and deduct credits
+  const creditCheck = await checkAndDeductCredits(env, subdomain, totalCredits);
+  if (!creditCheck.success) {
+    return new Response(JSON.stringify({
+      error: 'Insufficient credits',
+      balance: creditCheck.balance,
+      required: totalCredits,
+    }), { status: 402 });
+  }
+
+  try {
+    const response = await fetch('https://api.openai.com/v1/audio/speech', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${env.OPENAI_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model,
+        input,
+        voice,
+        response_format,
+        speed,
+      }),
+    });
+
+    if (!response.ok) {
+      const error = await response.text();
+      await refundCredits(env, subdomain, totalCredits);
+      throw new Error(`TTS API error: ${response.status} - ${error}`);
+    }
+
+    // Log usage
+    const usageId = generateId();
+    await env.DB.prepare(`
+      INSERT INTO ai_usage (id, app_subdomain, user_id, provider, tier, model, input_tokens, output_tokens, total_tokens, credits_used, has_vision, estimated_cost_usd)
+      VALUES (?, ?, ?, 'openai', 'tts', ?, ?, 0, ?, ?, 0, ?)
+    `).bind(
+      usageId,
+      subdomain,
+      user?.id || null,
+      model,
+      input.length,  // Store character count in input_tokens
+      input.length,
+      totalCredits,
+      totalCredits * 0.001
+    ).run();
+
+    // Return the audio as a binary response
+    const contentTypes = {
+      mp3: 'audio/mpeg',
+      opus: 'audio/opus',
+      aac: 'audio/aac',
+      flac: 'audio/flac',
+      wav: 'audio/wav',
+      pcm: 'audio/pcm',
+    };
+
+    return new Response(response.body, {
+      headers: {
+        'Content-Type': contentTypes[response_format] || 'audio/mpeg',
+        'X-Credits-Used': String(totalCredits),
+        'X-Character-Count': String(input.length),
+      },
+    });
+  } catch (error) {
+    return new Response(JSON.stringify({
+      error: 'TTS generation failed',
+      details: error.message,
+    }), { status: 500 });
+  }
+});
+
+// GET /ai/credits - Get current credit balance (owner-based)
+router.get('/ai/credits', async (request, env) => {
+  const subdomain = getSubdomain(request);
+  if (!subdomain) {
+    return new Response(JSON.stringify({ error: 'Invalid origin' }), { status: 400 });
+  }
+
+  const url = new URL(request.url);
+  const deploy_token = url.searchParams.get('deploy_token');
+
+  const user = await getSession(request, env);
+  const isOwner = user && await isAppOwner(env, subdomain, user.email);
+  const validToken = deploy_token && await validateDeployToken(env, subdomain, deploy_token);
+
+  if (!isOwner && !validToken) {
+    return new Response(JSON.stringify({ error: 'Not authorized' }), { status: 403 });
+  }
+
+  const ownerId = await getOwnerIdFromSubdomain(env, subdomain);
+  if (!ownerId) {
+    return new Response(JSON.stringify({ error: 'App not found' }), { status: 404 });
+  }
+
+  const credits = await env.DB.prepare(
+    'SELECT * FROM owner_credits WHERE owner_id = ?'
+  ).bind(ownerId).first();
+
+  return {
+    balance: credits?.balance || 0,
+    lifetime_purchased: credits?.lifetime_purchased || 0,
+    lifetime_used: credits?.lifetime_used || 0,
+  };
+});
+
+// POST /ai/credits - Add credits (owner only, for testing/admin)
+router.post('/ai/credits', async (request, env) => {
+  const subdomain = getSubdomain(request);
+  if (!subdomain) {
+    return new Response(JSON.stringify({ error: 'Invalid origin' }), { status: 400 });
+  }
+
+  const { amount, deploy_token } = await request.json();
+
+  const user = await getSession(request, env);
+  const isOwner = user && await isAppOwner(env, subdomain, user.email);
+  const validToken = deploy_token && await validateDeployToken(env, subdomain, deploy_token);
+
+  if (!isOwner && !validToken) {
+    return new Response(JSON.stringify({ error: 'Not authorized' }), { status: 403 });
+  }
+
+  if (!amount || typeof amount !== 'number' || amount <= 0) {
+    return new Response(JSON.stringify({ error: 'Valid positive amount required' }), { status: 400 });
+  }
+
+  const ownerId = await getOwnerIdFromSubdomain(env, subdomain);
+  if (!ownerId) {
+    return new Response(JSON.stringify({ error: 'App not found' }), { status: 404 });
+  }
+
+  // Upsert credits (owner-based)
+  await env.DB.prepare(`
+    INSERT INTO owner_credits (owner_id, balance, lifetime_purchased)
+    VALUES (?, ?, ?)
+    ON CONFLICT(owner_id) DO UPDATE SET
+      balance = balance + excluded.balance,
+      lifetime_purchased = lifetime_purchased + excluded.lifetime_purchased,
+      updated_at = datetime('now')
+  `).bind(ownerId, amount, amount).run();
+
+  const credits = await env.DB.prepare(
+    'SELECT * FROM owner_credits WHERE owner_id = ?'
+  ).bind(ownerId).first();
+
+  return {
+    balance: credits.balance,
+    added: amount,
+    lifetime_purchased: credits.lifetime_purchased,
+  };
+});
+
+// GET /ai/usage - Get usage history
+router.get('/ai/usage', async (request, env) => {
+  const subdomain = getSubdomain(request);
+  if (!subdomain) {
+    return new Response(JSON.stringify({ error: 'Invalid origin' }), { status: 400 });
+  }
+
+  const url = new URL(request.url);
+  const deploy_token = url.searchParams.get('deploy_token');
+  const limit = Math.min(parseInt(url.searchParams.get('limit') || '50'), 100);
+  const offset = parseInt(url.searchParams.get('offset') || '0');
+
+  const user = await getSession(request, env);
+  const isOwner = user && await isAppOwner(env, subdomain, user.email);
+  const validToken = deploy_token && await validateDeployToken(env, subdomain, deploy_token);
+
+  if (!isOwner && !validToken) {
+    return new Response(JSON.stringify({ error: 'Not authorized' }), { status: 403 });
+  }
+
+  const usage = await env.DB.prepare(`
+    SELECT id, user_id, provider, tier, model, input_tokens, output_tokens, total_tokens, has_vision, estimated_cost_usd, created_at
+    FROM ai_usage
+    WHERE app_subdomain = ?
+    ORDER BY created_at DESC
+    LIMIT ? OFFSET ?
+  `).bind(subdomain, limit, offset).all();
+
+  // Get totals
+  const totals = await env.DB.prepare(`
+    SELECT
+      COUNT(*) as request_count,
+      SUM(input_tokens) as total_input_tokens,
+      SUM(output_tokens) as total_output_tokens,
+      SUM(total_tokens) as total_tokens,
+      SUM(estimated_cost_usd) as total_cost
+    FROM ai_usage
+    WHERE app_subdomain = ?
+  `).bind(subdomain).first();
+
+  return {
+    items: usage.results,
+    totals: {
+      requests: totals?.request_count || 0,
+      input_tokens: totals?.total_input_tokens || 0,
+      output_tokens: totals?.total_output_tokens || 0,
+      total_tokens: totals?.total_tokens || 0,
+      estimated_cost: totals?.total_cost || 0,
+    },
+    limit,
+    offset,
+  };
+});
+
+// GET /ai/settings - Get AI settings for this app
+router.get('/ai/settings', async (request, env) => {
+  const subdomain = getSubdomain(request);
+  if (!subdomain) {
+    return new Response(JSON.stringify({ error: 'Invalid origin' }), { status: 400 });
+  }
+
+  const url = new URL(request.url);
+  const deploy_token = url.searchParams.get('deploy_token');
+
+  const user = await getSession(request, env);
+  const isOwner = user && await isAppOwner(env, subdomain, user.email);
+  const validToken = deploy_token && await validateDeployToken(env, subdomain, deploy_token);
+
+  if (!isOwner && !validToken) {
+    return new Response(JSON.stringify({ error: 'Not authorized' }), { status: 403 });
+  }
+
+  const settings = await getAiSettings(env, subdomain);
+  return settings;
+});
+
+// PUT /ai/settings - Update AI settings for this app
+router.put('/ai/settings', async (request, env) => {
+  const subdomain = getSubdomain(request);
+  if (!subdomain) {
+    return new Response(JSON.stringify({ error: 'Invalid origin' }), { status: 400 });
+  }
+
+  const { max_input_tokens, max_output_tokens, allowed_tiers, enabled, deploy_token } = await request.json();
+
+  const user = await getSession(request, env);
+  const isOwner = user && await isAppOwner(env, subdomain, user.email);
+  const validToken = deploy_token && await validateDeployToken(env, subdomain, deploy_token);
+
+  if (!isOwner && !validToken) {
+    return new Response(JSON.stringify({ error: 'Not authorized' }), { status: 403 });
+  }
+
+  // Validate allowed_tiers if provided
+  if (allowed_tiers) {
+    const tiers = allowed_tiers.split(',');
+    for (const t of tiers) {
+      if (!['good', 'best'].includes(t.trim())) {
+        return new Response(JSON.stringify({ error: 'Invalid tier in allowed_tiers' }), { status: 400 });
+      }
+    }
+  }
+
+  await env.DB.prepare(`
+    INSERT INTO ai_settings (app_subdomain, max_input_tokens, max_output_tokens, allowed_tiers, enabled)
+    VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT(app_subdomain) DO UPDATE SET
+      max_input_tokens = COALESCE(excluded.max_input_tokens, max_input_tokens),
+      max_output_tokens = COALESCE(excluded.max_output_tokens, max_output_tokens),
+      allowed_tiers = COALESCE(excluded.allowed_tiers, allowed_tiers),
+      enabled = COALESCE(excluded.enabled, enabled),
+      updated_at = datetime('now')
+  `).bind(
+    subdomain,
+    max_input_tokens || 4096,
+    max_output_tokens || 4096,
+    allowed_tiers || 'good,best',
+    enabled !== undefined ? (enabled ? 1 : 0) : 1
+  ).run();
+
+  const settings = await getAiSettings(env, subdomain);
+  return settings;
 });
 
 // 404 handler

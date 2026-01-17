@@ -206,6 +206,30 @@ export default {
       });
     }
 
+    // Proxy /_ai requests to API worker
+    if (url.pathname.startsWith('/_ai')) {
+      const headers = new Headers(request.headers);
+      headers.delete('host');
+      headers.set('X-Forwarded-Host', host);
+
+      const apiRequest = new Request(`https://api.itsalive.co${url.pathname.replace('/_ai', '/ai')}${url.search}`, {
+        method: request.method,
+        headers,
+        body: request.method !== 'GET' && request.method !== 'HEAD' ? request.body : undefined,
+      });
+
+      const apiResponse = await env.API.fetch(apiRequest);
+
+      const responseHeaders = new Headers(apiResponse.headers);
+      responseHeaders.set('Access-Control-Allow-Origin', `https://${host}`);
+      responseHeaders.set('Access-Control-Allow-Credentials', 'true');
+
+      return new Response(apiResponse.body, {
+        status: apiResponse.status,
+        headers: responseHeaders,
+      });
+    }
+
     // Auth callback for custom domains - exchanges callback token for session cookie
     if (url.pathname === '/_auth/callback') {
       const callbackToken = url.searchParams.get('token');
@@ -342,7 +366,7 @@ export default {
     }
 
     // Handle preflight for all API proxy routes
-    if ((url.pathname.startsWith('/_auth') || url.pathname.startsWith('/_db') || url.pathname.startsWith('/_me') || url.pathname.startsWith('/_uploads') || url.pathname.startsWith('/_email') || url.pathname.startsWith('/_itsalive')) && request.method === 'OPTIONS') {
+    if ((url.pathname.startsWith('/_auth') || url.pathname.startsWith('/_db') || url.pathname.startsWith('/_me') || url.pathname.startsWith('/_uploads') || url.pathname.startsWith('/_email') || url.pathname.startsWith('/_itsalive') || url.pathname.startsWith('/_ai')) && request.method === 'OPTIONS') {
       return new Response(null, {
         headers: {
           'Access-Control-Allow-Origin': `https://${host}`,

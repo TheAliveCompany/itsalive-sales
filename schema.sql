@@ -219,6 +219,43 @@ CREATE TABLE IF NOT EXISTS jobs (
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
+-- AI credits (token balance per owner account)
+CREATE TABLE IF NOT EXISTS owner_credits (
+  owner_id TEXT PRIMARY KEY,
+  balance INTEGER DEFAULT 0,
+  lifetime_purchased INTEGER DEFAULT 0,
+  lifetime_used INTEGER DEFAULT 0,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (owner_id) REFERENCES owners(id)
+);
+
+-- AI usage log (detailed tracking for billing)
+CREATE TABLE IF NOT EXISTS ai_usage (
+  id TEXT PRIMARY KEY,
+  app_subdomain TEXT NOT NULL,
+  user_id TEXT,
+  provider TEXT NOT NULL,
+  tier TEXT NOT NULL,
+  model TEXT NOT NULL,
+  input_tokens INTEGER NOT NULL,
+  output_tokens INTEGER NOT NULL,
+  total_tokens INTEGER NOT NULL,
+  credits_used INTEGER NOT NULL,
+  has_vision INTEGER DEFAULT 0,
+  estimated_cost_usd REAL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- AI settings per app (token limits, etc.)
+CREATE TABLE IF NOT EXISTS ai_settings (
+  app_subdomain TEXT PRIMARY KEY,
+  max_input_tokens INTEGER DEFAULT 4096,
+  max_output_tokens INTEGER DEFAULT 4096,
+  allowed_tiers TEXT DEFAULT 'good,best',
+  enabled INTEGER DEFAULT 1,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Indexes for performance
 CREATE INDEX IF NOT EXISTS idx_pending_token ON pending_deploys(token);
 CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(app_subdomain, user_id);
@@ -238,3 +275,5 @@ CREATE INDEX IF NOT EXISTS idx_email_log_user ON email_log(app_subdomain, to_use
 CREATE INDEX IF NOT EXISTS idx_webhooks_subdomain ON webhooks(app_subdomain, collection);
 CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(app_subdomain, status, run_at);
 CREATE INDEX IF NOT EXISTS idx_cron_next_run ON cron_jobs(enabled, next_run);
+CREATE INDEX IF NOT EXISTS idx_ai_usage_app ON ai_usage(app_subdomain, created_at);
+CREATE INDEX IF NOT EXISTS idx_ai_usage_user ON ai_usage(app_subdomain, user_id, created_at);
