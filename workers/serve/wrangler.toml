@@ -25,3 +25,8 @@ id = "07925433be8740968fd9245aace368ea"
 [[services]]
 binding = "API"
 service = "itsalive-api"
+
+# Analytics Engine for page views and unique visitors
+[[analytics_engine_datasets]]
+binding = "ANALYTICS"
+dataset = "itsalive-analytics"

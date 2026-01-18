@@ -99,6 +99,7 @@ Store data that can be shared between users. Data is organized into collections.
 - **Ownership**: Users can only edit/delete documents they created
 - **Read**: Configurable per-collection (private by default, can be made public with `public_read`)
 - **Delete**: Always requires login and ownership (never anonymous)
+- **Deploy token**: Bypasses all restrictions for automation scripts (include `deploy_token` in request body)
 
 ### Create/Update a Document
 
@@ -181,6 +182,52 @@ const res = await fetch('/_db/posts/_bulk', {
 });
 const { results, succeeded, failed } = await res.json();
 // results: [{ id: 'post-1', success: true }, { id: 'post-2', success: true }]
+```
+
+### Database Writes with Deploy Token (Automation)
+
+For automation scripts that need to write data without browser authentication:
+
+```javascript
+// Read deploy token from .itsalive file
+const config = JSON.parse(require('fs').readFileSync('.itsalive', 'utf8'));
+
+// Single document write
+await fetch('https://api.itsalive.co/db/recipes/my-recipe', {
+  method: 'PUT',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    title: 'Updated Recipe',
+    image: 'https://example.com/image.png',
+    deploy_token: config.deployToken  // Include in body
+  })
+});
+
+// Bulk write with deploy_token
+await fetch('https://api.itsalive.co/db/recipes/_bulk', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    deploy_token: config.deployToken,
+    docs: [
+      { id: 'recipe-1', data: { title: 'Recipe 1', image: '...' } },
+      { id: 'recipe-2', data: { title: 'Recipe 2', image: '...' } }
+    ]
+  })
+});
+
+// Partial update with merge (preserves existing fields)
+await fetch('https://api.itsalive.co/db/recipes/_bulk', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    deploy_token: config.deployToken,
+    merge: true,  // Only update specified fields
+    docs: [
+      { id: 'recipe-1', data: { image: 'new-image.png' } }  // Keeps title, ingredients, etc.
+    ]
+  })
+});
 ```
 
 ### Collection Settings (App Owner Only)
@@ -588,6 +635,10 @@ if (!res.ok) {
 | List jobs | GET | `/jobs` | Yes |
 | Get job status | GET | `/jobs/:id` | Yes |
 | Cancel job | DELETE | `/jobs/:id` | Yes |
+| AI chat | POST | `/_ai/chat` | Yes |
+| Get OG routes | GET | `/_og/routes` | No |
+| Set OG routes | PUT | `/_og/routes` | Owner/token |
+| Clear OG routes | DELETE | `/_og/routes` | Owner/token |
 
 ## Query Parameters for GET /db/:collection
 
@@ -599,3 +650,203 @@ if (!res.ok) {
 | `?sort=-field` | `?sort=-created_at` | Sort descending |
 | `?limit=N` | `?limit=10` | Max items (default 100, max 1000) |
 | `?offset=N` | `?offset=20` | Skip N items |
+
+## AI Chat
+
+Send messages to AI models (Claude, GPT, Gemini) with automatic credit billing.
+
+### Basic Chat
+
+```javascript
+const res = await fetch('/_ai/chat', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  credentials: 'include',
+  body: JSON.stringify({
+    provider: 'claude',  // 'claude', 'gpt', or 'gemini'
+    tier: 'good',        // 'good' (faster/cheaper) or 'best' (smarter)
+    messages: [
+      { role: 'user', content: 'What is the capital of France?' }
+    ],
+    system: 'You are a helpful assistant.',  // Optional system prompt
+    max_tokens: 1000  // Optional, defaults to app settings
+  })
+});
+
+const { content, model, usage } = await res.json();
+// content: "The capital of France is Paris."
+// usage: { input_tokens, output_tokens, total_tokens, credits_used }
+```
+
+### JSON Response Format
+
+When requesting structured JSON data, use `response_format: 'json'` to automatically strip markdown code blocks from the response:
+
+```javascript
+const res = await fetch('/_ai/chat', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  credentials: 'include',
+  body: JSON.stringify({
+    provider: 'claude',
+    tier: 'good',
+    response_format: 'json',  // Strips ```json blocks automatically
+    messages: [
+      { role: 'user', content: 'Return a JSON object with fields: name, age, city' }
+    ]
+  })
+});
+
+const { content } = await res.json();
+// content is clean JSON: {"name": "John", "age": 30, "city": "NYC"}
+// Without response_format, it might be: ```json\n{"name": "John"...}\n```
+```
+
+### Vision (Image Analysis)
+
+```javascript
+const res = await fetch('/_ai/chat', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  credentials: 'include',
+  body: JSON.stringify({
+    provider: 'claude',
+    tier: 'good',
+    messages: [{
+      role: 'user',
+      content: [
+        { type: 'text', text: 'What is in this image?' },
+        { type: 'image', url: 'https://example.com/photo.jpg' }
+        // Or use base64: { type: 'image', base64: '...', media_type: 'image/jpeg' }
+      ]
+    }]
+  })
+});
+```
+
+### AI Parameters
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `provider` | string | `'claude'`, `'gpt'`, or `'gemini'` (default: `'claude'`) |
+| `tier` | string | `'good'` (faster) or `'best'` (smarter) |
+| `messages` | array | Array of `{ role: 'user'|'assistant', content: string }` |
+| `system` | string | Optional system prompt |
+| `max_tokens` | number | Max response tokens (default: app setting) |
+| `response_format` | string | `'text'` (default) or `'json'` (strips markdown blocks) |
+
+## Dynamic OG Tags (Social Sharing for SPAs)
+
+SPAs with client-side routing can't have proper social sharing previews because crawlers don't execute JavaScript. Configure OG routes to inject dynamic meta tags based on your database content.
+
+### How It Works
+
+1. Configure URL patterns that map to database collections
+2. When a crawler (or user) visits `/recipe/abc123`, the server:
+   - Matches the URL against your patterns
+   - Fetches the document from your collection
+   - Injects og:title, og:description, og:image into the HTML
+
+### Configure OG Routes
+
+```javascript
+// Read deploy token from .itsalive file
+const config = JSON.parse(require('fs').readFileSync('.itsalive', 'utf8'));
+
+// Configure routes (replaces any existing routes)
+await fetch('/_og/routes', {
+  method: 'PUT',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    deploy_token: config.deployToken,
+    routes: [
+      {
+        pattern: '/recipe/:id',        // URL pattern with :param placeholders
+        collection: 'recipes',         // Database collection to query
+        id_param: 'id',                // Which URL param is the document ID (default: 'id')
+        title_field: 'title',          // Field in document for og:title
+        description_field: 'description',  // Field for og:description
+        image_field: 'image_url'       // Field for og:image
+      },
+      {
+        pattern: '/user/:username',
+        collection: 'profiles',
+        id_param: 'username',
+        title_field: 'name',
+        description_field: 'bio',
+        image_field: 'avatar'
+      }
+    ]
+  })
+});
+```
+
+### List OG Routes
+
+```javascript
+const res = await fetch('/_og/routes');
+const { routes } = await res.json();
+// routes: [{ pattern, collection, id_param, title_field, description_field, image_field }]
+```
+
+### Clear OG Routes
+
+```javascript
+const config = JSON.parse(require('fs').readFileSync('.itsalive', 'utf8'));
+
+await fetch('/_og/routes', {
+  method: 'DELETE',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ deploy_token: config.deployToken })
+});
+```
+
+### Example: Recipe Sharing App
+
+```javascript
+// 1. Store recipes in database
+await fetch('/_db/recipes/chicken-soup', {
+  method: 'PUT',
+  headers: { 'Content-Type': 'application/json' },
+  credentials: 'include',
+  body: JSON.stringify({
+    title: 'Grandma\'s Chicken Soup',
+    description: 'A hearty, comforting soup recipe passed down through generations.',
+    image_url: 'https://myapp.itsalive.co/uploads/chicken-soup.jpg',
+    ingredients: ['chicken', 'carrots', 'celery', 'noodles']
+  })
+});
+
+// 2. Configure OG routes (once, during setup)
+await fetch('/_og/routes', {
+  method: 'PUT',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    deploy_token: config.deployToken,
+    routes: [{
+      pattern: '/recipe/:id',
+      collection: 'recipes',
+      title_field: 'title',
+      description_field: 'description',
+      image_field: 'image_url'
+    }]
+  })
+});
+
+// 3. Now when someone shares https://myapp.itsalive.co/recipe/chicken-soup
+//    Social platforms will see:
+//    - og:title = "Grandma's Chicken Soup"
+//    - og:description = "A hearty, comforting soup recipe..."
+//    - og:image = "https://myapp.itsalive.co/uploads/chicken-soup.jpg"
+```
+
+### OG Route Parameters
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `pattern` | Yes | URL pattern with `:param` placeholders (e.g., `/recipe/:id`) |
+| `collection` | Yes | Database collection to fetch document from |
+| `id_param` | No | URL param name for document ID (default: `'id'`) |
+| `title_field` | No | Document field for og:title and page title |
+| `description_field` | No | Document field for og:description |
+| `image_field` | No | Document field for og:image |

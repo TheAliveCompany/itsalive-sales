@@ -256,6 +256,28 @@ CREATE TABLE IF NOT EXISTS ai_settings (
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
+-- User activity tracking for DAU/WAU/MAU
+CREATE TABLE IF NOT EXISTS user_activity (
+  app_subdomain TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  date TEXT NOT NULL,
+  PRIMARY KEY (app_subdomain, user_id, date)
+);
+
+-- OG routes for dynamic meta tags in SPAs
+CREATE TABLE IF NOT EXISTS og_routes (
+  id TEXT PRIMARY KEY,
+  app_subdomain TEXT NOT NULL,
+  pattern TEXT NOT NULL,           -- '/recipe/:id' or '/user/:username'
+  collection TEXT NOT NULL,        -- 'recipes' or 'users'
+  id_param TEXT DEFAULT 'id',      -- which URL param is the doc ID
+  title_field TEXT,                -- 'title' or 'name'
+  description_field TEXT,          -- 'description' or 'bio'
+  image_field TEXT,                -- 'image_url' or 'avatar'
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(app_subdomain, pattern)
+);
+
 -- Indexes for performance
 CREATE INDEX IF NOT EXISTS idx_pending_token ON pending_deploys(token);
 CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(app_subdomain, user_id);
@@ -277,3 +299,6 @@ CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(app_subdomain, status, run_at
 CREATE INDEX IF NOT EXISTS idx_cron_next_run ON cron_jobs(enabled, next_run);
 CREATE INDEX IF NOT EXISTS idx_ai_usage_app ON ai_usage(app_subdomain, created_at);
 CREATE INDEX IF NOT EXISTS idx_ai_usage_user ON ai_usage(app_subdomain, user_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_og_routes_subdomain ON og_routes(app_subdomain);
+CREATE INDEX IF NOT EXISTS idx_user_activity_date ON user_activity(app_subdomain, date);
+CREATE INDEX IF NOT EXISTS idx_app_users_created ON app_users(app_subdomain, created_at);

@@ -23,6 +23,11 @@ id = "392e1a15e04f489281d2290d402f841e"
 binding = "EMAIL_TOKENS"
 id = "07925433be8740968fd9245aace368ea"
 
+# Analytics Engine for querying page views and unique visitors
+[[analytics_engine_datasets]]
+binding = "ANALYTICS"
+dataset = "itsalive-analytics"
+
 # Cron trigger for processing scheduled jobs and cron tasks
 # NOTE: Requires workers.dev subdomain - enable in Cloudflare dashboard first
 # [triggers]

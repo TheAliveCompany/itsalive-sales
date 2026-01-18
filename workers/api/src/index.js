@@ -488,7 +488,47 @@ async function getSession(request, env) {
     'SELECT id, email FROM app_users WHERE id = ?'
   ).bind(session.user_id).first();
 
+  // Track user activity for DAU/WAU/MAU (fire-and-forget)
+  if (user) {
+    trackUserActivity(env, subdomain, user.id).catch(() => {});
+  }
+
   return user;
+}
+
+// Track user activity for DAU/WAU/MAU metrics
+async function trackUserActivity(env, subdomain, userId) {
+  const today = new Date().toISOString().slice(0, 10);
+  await env.DB.prepare(
+    'INSERT OR IGNORE INTO user_activity (app_subdomain, user_id, date) VALUES (?, ?, ?)'
+  ).bind(subdomain, userId, today).run();
+}
+
+// Helper to query Analytics Engine via SQL API
+async function queryAnalytics(env, sql) {
+  if (!env.CLOUDFLARE_API_TOKEN || !env.CLOUDFLARE_ACCOUNT_ID) {
+    return { data: [] }; // Silently return empty if not configured
+  }
+
+  const response = await fetch(
+    `https://api.cloudflare.com/client/v4/accounts/${env.CLOUDFLARE_ACCOUNT_ID}/analytics_engine/sql`,
+    {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${env.CLOUDFLARE_API_TOKEN}`,
+        'Content-Type': 'text/plain',
+      },
+      body: sql,
+    }
+  );
+
+  if (!response.ok) {
+    const text = await response.text();
+    console.error('Analytics API error:', response.status, text);
+    return { data: [] };
+  }
+
+  return response.json();
 }
 
 // ============ OWNER DASHBOARD ENDPOINTS ============
@@ -1533,6 +1573,49 @@ Shared app data. Organized by collections.
 - **Ownership**: Users can only edit/delete docs they created
 - **Read**: Private by default. Enable \`public_read\` for public access.
 - **Delete**: Always requires login and ownership (never anonymous)
+- **Deploy token**: Bypasses all restrictions for automation scripts
+
+### Save data with deploy_token (for automation)
+\`\`\`javascript
+// Use deploy_token for scripts that need to write without browser auth
+const config = JSON.parse(require('fs').readFileSync('.itsalive', 'utf8'));
+
+await fetch('https://api.itsalive.co/db/recipes/my-recipe', {
+  method: 'PUT',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    title: 'Updated Recipe',
+    image: 'https://...',
+    deploy_token: config.deployToken  // Include in body
+  })
+});
+
+// Bulk update with deploy_token
+await fetch('https://api.itsalive.co/db/recipes/_bulk', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    deploy_token: config.deployToken,
+    docs: [
+      { id: 'recipe-1', data: { title: 'Recipe 1', image: '...' } },
+      { id: 'recipe-2', data: { title: 'Recipe 2', image: '...' } }
+    ]
+  })
+});
+
+// Partial update with merge (preserves existing fields)
+await fetch('https://api.itsalive.co/db/recipes/_bulk', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    deploy_token: config.deployToken,
+    merge: true,  // Only updates specified fields, keeps the rest
+    docs: [
+      { id: 'recipe-1', data: { image: 'new.png' } }  // title, ingredients etc preserved
+    ]
+  })
+});
+\`\`\`
 
 ### Save data
 \`\`\`javascript
@@ -1712,6 +1795,59 @@ await fetch('/_uploads/abc456', { method: 'DELETE', credentials: 'include' });
 ### Supported formats
 - Images: JPEG, PNG, GIF, WebP, SVG (max 10MB)
 - Documents: PDF (max 25MB), TXT, CSV
+
+## Image Optimization
+
+Serve optimized, resized images on-the-fly with edge caching. Perfect for responsive images and faster mobile loading.
+
+### Basic usage
+\`\`\`html
+<!-- Original upload -->
+<img src="/uploads/user123/photo.jpg">
+
+<!-- Optimized: 400px wide, WebP format, 80% quality -->
+<img src="/_images/user123/photo.jpg?w=400&q=80&f=webp">
+\`\`\`
+
+### Parameters
+| Param | Description | Default |
+|-------|-------------|---------|
+| \`w\` or \`width\` | Target width (1-4000px) | original |
+| \`h\` or \`height\` | Target height (1-4000px) | original |
+| \`q\` or \`quality\` | Compression quality (1-100) | 80 |
+| \`f\` or \`format\` | Output format: \`webp\`, \`avif\`, \`jpeg\`, \`png\`, \`auto\` | webp |
+| \`fit\` | Resize mode: \`cover\`, \`contain\`, \`scale-down\`, \`crop\` | scale-down |
+
+### Responsive images with srcset
+\`\`\`html
+<img
+  src="/_images/user123/photo.jpg?w=800&f=webp"
+  srcset="
+    /_images/user123/photo.jpg?w=400&f=webp 400w,
+    /_images/user123/photo.jpg?w=800&f=webp 800w,
+    /_images/user123/photo.jpg?w=1200&f=webp 1200w
+  "
+  sizes="(max-width: 600px) 400px, (max-width: 1000px) 800px, 1200px"
+>
+\`\`\`
+
+### Auto format (serves best format for browser)
+\`\`\`html
+<!-- Serves AVIF to Chrome, WebP to Safari, JPEG to older browsers -->
+<img src="/_images/user123/photo.jpg?w=600&f=auto">
+\`\`\`
+
+### Thumbnail grid example
+\`\`\`javascript
+const thumbnails = images.map(img =>
+  \`<img src="/_images/\${img.path}?w=200&h=200&fit=cover&q=75">\`
+).join('');
+\`\`\`
+
+### Performance notes
+- Transformed images are cached at the edge for 1 year
+- First request transforms the image; subsequent requests are instant
+- Original images remain unchanged in storage
 
 ## Email Sending
 
@@ -1928,6 +2064,28 @@ const { content, usage } = await res.json();
 // usage: { input_tokens: 15, output_tokens: 12, total_tokens: 27 }
 \`\`\`
 
+### JSON Response Format
+When requesting structured JSON data, use \`response_format: 'json'\` to automatically strip markdown code blocks:
+
+\`\`\`javascript
+const res = await fetch('/_ai/chat', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  credentials: 'include',
+  body: JSON.stringify({
+    provider: 'claude',
+    tier: 'good',
+    response_format: 'json',  // Strips \\\`\\\`\\\`json blocks automatically
+    messages: [
+      { role: 'user', content: 'Return a JSON object with fields: name, age, city' }
+    ]
+  })
+});
+const { content } = await res.json();
+// content is clean JSON: {"name": "John", "age": 30, "city": "NYC"}
+// Without response_format, it might be wrapped in \\\`\\\`\\\`json blocks
+\`\`\`
+
 ### Send an image for analysis (vision)
 \`\`\`javascript
 const res = await fetch('/_ai/chat', {
@@ -2057,6 +2215,61 @@ if (res.status === 402) {
   console.log('Insufficient credits. Balance:', balance, 'Required:', required);
 }
 \`\`\`
+
+## Dynamic OG Tags (Social Sharing for SPAs)
+
+SPAs with client-side routing can't have proper social sharing previews because crawlers don't execute JavaScript. Configure OG routes to inject dynamic meta tags based on your database content.
+
+### How It Works
+1. Configure URL patterns that map to database collections
+2. When a crawler visits \`/recipe/abc123\`, the server matches the pattern, fetches the document, and injects og:title, og:description, og:image into the HTML
+
+### Configure OG Routes
+\`\`\`javascript
+const config = JSON.parse(require('fs').readFileSync('.itsalive', 'utf8'));
+
+await fetch('/_og/routes', {
+  method: 'PUT',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    deploy_token: config.deployToken,
+    routes: [
+      {
+        pattern: '/recipe/:id',        // URL pattern with :param placeholders
+        collection: 'recipes',         // Database collection to query
+        id_param: 'id',                // URL param for document ID (default: 'id')
+        title_field: 'title',          // Document field for og:title
+        description_field: 'description',
+        image_field: 'image_url'
+      }
+    ]
+  })
+});
+\`\`\`
+
+### List OG Routes
+\`\`\`javascript
+const { routes } = await fetch('/_og/routes').then(r => r.json());
+\`\`\`
+
+### Clear OG Routes
+\`\`\`javascript
+await fetch('/_og/routes', {
+  method: 'DELETE',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ deploy_token: config.deployToken })
+});
+\`\`\`
+
+### OG Route Parameters
+| Field | Required | Description |
+|-------|----------|-------------|
+| \`pattern\` | Yes | URL pattern with \`:param\` placeholders (e.g., \`/recipe/:id\`) |
+| \`collection\` | Yes | Database collection to fetch document from |
+| \`id_param\` | No | URL param name for document ID (default: \`'id'\`) |
+| \`title_field\` | No | Document field for og:title |
+| \`description_field\` | No | Document field for og:description |
+| \`image_field\` | No | Document field for og:image |
 `;
 
   return new Response(template, {
@@ -3418,17 +3631,39 @@ router.get('/db/:collection/:id', async (request, env) => {
 
 // PUT /db/:collection/:id - Save document
 // Supports location data via lat/lng fields in the document
+// Supports deploy_token for automation scripts
 router.put('/db/:collection/:id', async (request, env) => {
-  const subdomain = getSubdomain(request);
   const { collection, id } = request.params;
-  const data = await request.json();
+  const body = await request.json();
+
+  // Extract deploy_token and merge flag from body if present
+  const { deploy_token, merge, ...data } = body;
+
+  let subdomain = getSubdomain(request);
+  let isOwner = false;
+
+  // Deploy token auth (owner/admin access - can write any doc)
+  if (deploy_token) {
+    const tokenData = await env.DB.prepare(
+      'SELECT subdomain FROM deploy_tokens WHERE token = ?'
+    ).bind(deploy_token).first();
+
+    if (tokenData) {
+      subdomain = tokenData.subdomain;
+      isOwner = true;
+    }
+  }
+
+  if (!subdomain) {
+    return new Response(JSON.stringify({ error: 'Could not determine app. Use deploy_token or call from app origin.' }), { status: 400 });
+  }
 
   // Get collection settings (for public_write and schema)
   const settings = await getCollectionSettings(env, subdomain, collection);
 
-  // Check auth - require login unless public_write is enabled
+  // Check auth - deploy_token, session, or public_write
   const user = await getSession(request, env);
-  if (!user && !settings.public_write) {
+  if (!isOwner && !user && !settings.public_write) {
     return new Response(JSON.stringify({ error: 'Not logged in' }), { status: 401 });
   }
 
@@ -3445,31 +3680,45 @@ router.put('/db/:collection/:id', async (request, env) => {
     'SELECT created_by FROM app_data WHERE app_subdomain = ? AND collection = ? AND doc_id = ?'
   ).bind(subdomain, collection, id).first();
 
-  // Ownership check: logged-in users can only edit their own docs
+  // Ownership check: deploy_token bypasses, logged-in users can only edit their own docs
   // Anonymous writes can only create new docs or update anonymous docs
-  if (existing && existing.created_by) {
+  if (!isOwner && existing && existing.created_by) {
     if (!user || existing.created_by !== user.id) {
       return new Response(JSON.stringify({ error: 'Not authorized to edit this document' }), { status: 403 });
     }
   }
 
-  const createdBy = user ? user.id : null;
+  const createdBy = isOwner ? (existing?.created_by || 'owner') : (user ? user.id : null);
 
   // Extract lat/lng for geo queries if present in data
   const lat = typeof data.lat === 'number' ? data.lat : (typeof data.latitude === 'number' ? data.latitude : null);
   const lng = typeof data.lng === 'number' ? data.lng : (typeof data.longitude === 'number' ? data.longitude : null);
 
-  await env.DB.prepare(`
-    INSERT INTO app_data (app_subdomain, collection, doc_id, data, created_by, lat, lng, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, datetime("now"))
-    ON CONFLICT(app_subdomain, collection, doc_id) DO UPDATE SET
-      data = excluded.data,
-      lat = excluded.lat,
-      lng = excluded.lng,
-      updated_at = datetime("now")
-  `).bind(subdomain, collection, id, JSON.stringify(data), createdBy, lat, lng).run();
+  if (merge) {
+    // Merge: only update specified fields, preserve existing data
+    await env.DB.prepare(`
+      INSERT INTO app_data (app_subdomain, collection, doc_id, data, created_by, lat, lng, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, datetime("now"))
+      ON CONFLICT(app_subdomain, collection, doc_id) DO UPDATE SET
+        data = json_patch(app_data.data, excluded.data),
+        lat = COALESCE(excluded.lat, app_data.lat),
+        lng = COALESCE(excluded.lng, app_data.lng),
+        updated_at = datetime("now")
+    `).bind(subdomain, collection, id, JSON.stringify(data), createdBy, lat, lng).run();
+  } else {
+    // Replace: full document replacement (default)
+    await env.DB.prepare(`
+      INSERT INTO app_data (app_subdomain, collection, doc_id, data, created_by, lat, lng, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, datetime("now"))
+      ON CONFLICT(app_subdomain, collection, doc_id) DO UPDATE SET
+        data = excluded.data,
+        lat = excluded.lat,
+        lng = excluded.lng,
+        updated_at = datetime("now")
+    `).bind(subdomain, collection, id, JSON.stringify(data), createdBy, lat, lng).run();
+  }
 
-  return { success: true };
+  return { success: true, merged: !!merge };
 });
 
 // DELETE /db/:collection/:id - Delete document
@@ -3536,17 +3785,38 @@ router.delete('/db/:collection/:id', async (request, env) => {
 });
 
 // POST /db/:collection/_bulk - Bulk create/update documents
+// Supports deploy_token for automation scripts
+// Supports merge: true for partial updates
 router.post('/db/:collection/_bulk', async (request, env) => {
-  const subdomain = getSubdomain(request);
   const { collection } = request.params;
-  const { docs } = await request.json();
+  const body = await request.json();
+  const { docs, deploy_token, merge } = body;
+
+  let subdomain = getSubdomain(request);
+  let isOwner = false;
+
+  // Deploy token auth (owner/admin access - can write any doc)
+  if (deploy_token) {
+    const tokenData = await env.DB.prepare(
+      'SELECT subdomain FROM deploy_tokens WHERE token = ?'
+    ).bind(deploy_token).first();
+
+    if (tokenData) {
+      subdomain = tokenData.subdomain;
+      isOwner = true;
+    }
+  }
+
+  if (!subdomain) {
+    return new Response(JSON.stringify({ error: 'Could not determine app. Use deploy_token or call from app origin.' }), { status: 400 });
+  }
 
   // Get collection settings (for public_write and schema)
   const settings = await getCollectionSettings(env, subdomain, collection);
 
-  // Check auth - require login unless public_write is enabled
+  // Check auth - deploy_token, session, or public_write
   const user = await getSession(request, env);
-  if (!user && !settings.public_write) {
+  if (!isOwner && !user && !settings.public_write) {
     return new Response(JSON.stringify({ error: 'Not logged in' }), { status: 401 });
   }
 
@@ -3559,7 +3829,6 @@ router.post('/db/:collection/_bulk', async (request, env) => {
   }
 
   const results = [];
-  const createdBy = user ? user.id : null;
 
   for (const doc of docs) {
     const { id, data } = doc;
@@ -3583,23 +3852,37 @@ router.post('/db/:collection/_bulk', async (request, env) => {
       'SELECT created_by FROM app_data WHERE app_subdomain = ? AND collection = ? AND doc_id = ?'
     ).bind(subdomain, collection, id).first();
 
-    // Ownership check: logged-in users can only edit their own docs
+    // Ownership check: deploy_token bypasses, logged-in users can only edit their own docs
     // Anonymous writes can only create new docs or update anonymous docs
-    if (existing && existing.created_by) {
+    if (!isOwner && existing && existing.created_by) {
       if (!user || existing.created_by !== user.id) {
         results.push({ id, success: false, error: 'Not authorized to edit this document' });
         continue;
       }
     }
 
+    const createdBy = isOwner ? (existing?.created_by || 'owner') : (user ? user.id : null);
+
     // Save document
-    await env.DB.prepare(`
-      INSERT INTO app_data (app_subdomain, collection, doc_id, data, created_by, updated_at)
-      VALUES (?, ?, ?, ?, ?, datetime("now"))
-      ON CONFLICT(app_subdomain, collection, doc_id) DO UPDATE SET
-        data = excluded.data,
-        updated_at = datetime("now")
-    `).bind(subdomain, collection, id, JSON.stringify(data), createdBy).run();
+    if (merge) {
+      // Merge: only update specified fields, preserve existing data
+      await env.DB.prepare(`
+        INSERT INTO app_data (app_subdomain, collection, doc_id, data, created_by, updated_at)
+        VALUES (?, ?, ?, ?, ?, datetime("now"))
+        ON CONFLICT(app_subdomain, collection, doc_id) DO UPDATE SET
+          data = json_patch(app_data.data, excluded.data),
+          updated_at = datetime("now")
+      `).bind(subdomain, collection, id, JSON.stringify(data), createdBy).run();
+    } else {
+      // Replace: full document replacement (default)
+      await env.DB.prepare(`
+        INSERT INTO app_data (app_subdomain, collection, doc_id, data, created_by, updated_at)
+        VALUES (?, ?, ?, ?, ?, datetime("now"))
+        ON CONFLICT(app_subdomain, collection, doc_id) DO UPDATE SET
+          data = excluded.data,
+          updated_at = datetime("now")
+      `).bind(subdomain, collection, id, JSON.stringify(data), createdBy).run();
+    }
 
     results.push({ id, success: true });
   }
@@ -3607,7 +3890,7 @@ router.post('/db/:collection/_bulk', async (request, env) => {
   const succeeded = results.filter(r => r.success).length;
   const failed = results.filter(r => !r.success).length;
 
-  return { results, succeeded, failed };
+  return { results, succeeded, failed, merged: !!merge };
 });
 
 // ============ USER DATA ENDPOINTS ============
@@ -4694,7 +4977,7 @@ router.post('/ai/chat', async (request, env) => {
   }
 
   const body = await request.json();
-  const { provider = 'claude', tier = 'good', messages, system, max_tokens, deploy_token } = body;
+  const { provider = 'claude', tier = 'good', messages, system, max_tokens, response_format, deploy_token } = body;
 
   // Auth: deploy_token or logged-in user
   const user = await getSession(request, env);
@@ -4712,6 +4995,11 @@ router.post('/ai/chat', async (request, env) => {
   // Validate tier
   if (!['good', 'best'].includes(tier)) {
     return new Response(JSON.stringify({ error: 'Invalid tier. Use "good" or "best"' }), { status: 400 });
+  }
+
+  // Validate response_format
+  if (response_format && !['text', 'json'].includes(response_format)) {
+    return new Response(JSON.stringify({ error: 'Invalid response_format. Use "text" or "json"' }), { status: 400 });
   }
 
   // Validate messages
@@ -4849,9 +5137,29 @@ router.post('/ai/chat', async (request, env) => {
     estimatedCost
   ).run();
 
+  // Process response for JSON format if requested
+  let content = result.content;
+  if (response_format === 'json' && content) {
+    // Remove markdown code blocks
+    content = content
+      .replace(/^```(?:json)?\s*\n?/i, '')
+      .replace(/\n?```\s*$/i, '')
+      .trim();
+
+    // If still not valid JSON, try to extract JSON object/array
+    try {
+      JSON.parse(content);
+    } catch (e) {
+      const jsonMatch = content.match(/(\{[\s\S]*\}|\[[\s\S]*\])/);
+      if (jsonMatch) {
+        content = jsonMatch[1];
+      }
+    }
+  }
+
   // Return the response
   return {
-    content: result.content,
+    content,
     model,
     usage: {
       input_tokens: actualInputTokens,
@@ -5244,11 +5552,48 @@ router.post('/ai/image', async (request, env) => {
       totalCredits * 0.001
     ).run();
 
+    // Cache images in R2 (OpenAI URLs are temporary)
+    const app = await env.DB.prepare('SELECT custom_domain FROM apps WHERE subdomain = ?').bind(subdomain).first();
+    const baseUrl = app?.custom_domain ? `https://${app.custom_domain}` : `https://${subdomain}.itsalive.co`;
+
+    const cachedImages = await Promise.all(data.data.map(async (img) => {
+      try {
+        // Fetch image from OpenAI's temporary URL
+        const imageResponse = await fetch(img.url);
+        if (!imageResponse.ok) {
+          // If fetch fails, return original URL as fallback
+          return { url: img.url, revised_prompt: img.revised_prompt, cached: false };
+        }
+
+        const imageData = await imageResponse.arrayBuffer();
+        const contentType = imageResponse.headers.get('content-type') || 'image/png';
+        const ext = contentType.includes('png') ? 'png' : 'webp';
+
+        // Generate unique filename and store in R2
+        const imageId = generateId();
+        const filename = `${imageId}.${ext}`;
+        const path = `${subdomain}/uploads/ai/${filename}`;
+
+        await env.SITES.put(path, imageData, {
+          httpMetadata: { contentType }
+        });
+
+        // Store metadata in uploads table
+        await env.DB.prepare(`
+          INSERT INTO uploads (id, app_subdomain, filename, original_filename, content_type, size, created_by, public)
+          VALUES (?, ?, ?, ?, ?, ?, ?, 1)
+        `).bind(imageId, subdomain, filename, `dalle-${imageId}.${ext}`, contentType, imageData.byteLength, user?.id || 'ai').run();
+
+        const permanentUrl = `${baseUrl}/uploads/ai/${filename}`;
+        return { url: permanentUrl, revised_prompt: img.revised_prompt, cached: true };
+      } catch (e) {
+        // On any error, fall back to original URL
+        return { url: img.url, revised_prompt: img.revised_prompt, cached: false };
+      }
+    }));
+
     return {
-      images: data.data.map(img => ({
-        url: img.url,
-        revised_prompt: img.revised_prompt,
-      })),
+      images: cachedImages,
       model,
       size,
       quality: model === 'dall-e-3' ? quality : undefined,
@@ -5726,6 +6071,482 @@ router.put('/ai/settings', async (request, env) => {
 
   const settings = await getAiSettings(env, subdomain);
   return settings;
+});
+
+// ============ STATISTICS ENDPOINTS ============
+
+// GET /stats/summary - Overview of app metrics
+router.get('/stats/summary', async (request, env) => {
+  const url = new URL(request.url);
+  const deploy_token = url.searchParams.get('deploy_token');
+  const querySubdomain = url.searchParams.get('subdomain');
+
+  // Prefer query param subdomain (for owner dashboard), fall back to origin
+  const originSubdomain = getSubdomain(request);
+  const subdomain = querySubdomain || (originSubdomain !== 'dashboard' ? originSubdomain : null);
+  if (!subdomain) {
+    return new Response(JSON.stringify({ error: 'Subdomain required' }), { status: 400 });
+  }
+
+  // Check authorization: app user who is owner, or owner session, or deploy token
+  const user = await getSession(request, env);
+  const ownerSession = await getOwnerSession(request, env);
+  const isOwner = (user && await isAppOwner(env, subdomain, user.email)) ||
+                  (ownerSession && await isAppOwner(env, subdomain, ownerSession.email));
+  const validToken = deploy_token && await validateDeployToken(env, subdomain, deploy_token);
+
+  if (!isOwner && !validToken) {
+    return new Response(JSON.stringify({ error: 'Not authorized. Owner or deploy_token required.' }), { status: 403 });
+  }
+
+  const today = new Date().toISOString().slice(0, 10);
+  const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const monthAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+
+  // Active users (DAU, WAU, MAU)
+  const [dauResult, wauResult, mauResult] = await Promise.all([
+    env.DB.prepare('SELECT COUNT(*) as count FROM user_activity WHERE app_subdomain = ? AND date = ?')
+      .bind(subdomain, today).first(),
+    env.DB.prepare('SELECT COUNT(DISTINCT user_id) as count FROM user_activity WHERE app_subdomain = ? AND date >= ?')
+      .bind(subdomain, weekAgo).first(),
+    env.DB.prepare('SELECT COUNT(DISTINCT user_id) as count FROM user_activity WHERE app_subdomain = ? AND date >= ?')
+      .bind(subdomain, monthAgo).first(),
+  ]);
+
+  // Total registered users
+  const totalUsersResult = await env.DB.prepare(
+    'SELECT COUNT(*) as count FROM app_users WHERE app_subdomain = ?'
+  ).bind(subdomain).first();
+
+  // New signups this week
+  const signupsResult = await env.DB.prepare(
+    'SELECT COUNT(*) as count FROM app_users WHERE app_subdomain = ? AND created_at >= ?'
+  ).bind(subdomain, weekAgo).first();
+
+  // AI usage this month
+  const aiUsageResult = await env.DB.prepare(`
+    SELECT COUNT(*) as requests, COALESCE(SUM(credits_used), 0) as credits
+    FROM ai_usage WHERE app_subdomain = ? AND created_at >= ?
+  `).bind(subdomain, monthAgo).first();
+
+  // Storage stats
+  const storageResult = await env.DB.prepare(`
+    SELECT COUNT(*) as files, COALESCE(SUM(size), 0) as bytes
+    FROM uploads WHERE app_subdomain = ?
+  `).bind(subdomain).first();
+
+  // Documents count
+  const docsResult = await env.DB.prepare(
+    'SELECT COUNT(*) as count FROM app_data WHERE app_subdomain = ?'
+  ).bind(subdomain).first();
+
+  // Page views and unique visitors from Analytics Engine
+  let pageViews = { today: 0, week: 0, month: 0 };
+  let uniqueVisitors = { today: 0, week: 0, month: 0 };
+
+  try {
+    // Query Analytics Engine for page views and unique visitors
+    const todayQuery = `
+      SELECT COUNT() as page_views, COUNT(DISTINCT blob2) as unique_visitors
+      FROM "itsalive-analytics"
+      WHERE index1 = '${subdomain}' AND timestamp >= NOW() - INTERVAL '24' HOUR
+    `;
+    const todayStats = await queryAnalytics(env, todayQuery);
+    if (todayStats?.data?.[0]) {
+      pageViews.today = todayStats.data[0].page_views || 0;
+      uniqueVisitors.today = todayStats.data[0].unique_visitors || 0;
+    }
+
+    const weekQuery = `
+      SELECT COUNT() as page_views, COUNT(DISTINCT blob2) as unique_visitors
+      FROM "itsalive-analytics" WHERE index1 = '${subdomain}' AND timestamp >= NOW() - INTERVAL '7' DAY
+    `;
+    const weekStats = await queryAnalytics(env, weekQuery);
+    if (weekStats?.data?.[0]) {
+      pageViews.week = weekStats.data[0].page_views || 0;
+      uniqueVisitors.week = weekStats.data[0].unique_visitors || 0;
+    }
+
+    const monthQuery = `
+      SELECT COUNT() as page_views, COUNT(DISTINCT blob2) as unique_visitors
+      FROM "itsalive-analytics" WHERE index1 = '${subdomain}' AND timestamp >= NOW() - INTERVAL '30' DAY
+    `;
+    const monthStats = await queryAnalytics(env, monthQuery);
+    if (monthStats?.data?.[0]) {
+      pageViews.month = monthStats.data[0].page_views || 0;
+      uniqueVisitors.month = monthStats.data[0].unique_visitors || 0;
+    }
+  } catch (e) {
+    // Analytics Engine may not be set up yet
+    console.error('Analytics query error:', e);
+  }
+
+  return {
+    users: {
+      total: totalUsersResult?.count || 0,
+      dau: dauResult?.count || 0,
+      wau: wauResult?.count || 0,
+      mau: mauResult?.count || 0,
+      signups_this_week: signupsResult?.count || 0,
+    },
+    traffic: {
+      page_views: pageViews,
+      unique_visitors: uniqueVisitors,
+    },
+    ai: {
+      requests_this_month: aiUsageResult?.requests || 0,
+      credits_used_this_month: aiUsageResult?.credits || 0,
+    },
+    storage: {
+      files: storageResult?.files || 0,
+      bytes: storageResult?.bytes || 0,
+      mb: Math.round((storageResult?.bytes || 0) / 1024 / 1024 * 100) / 100,
+    },
+    content: {
+      documents: docsResult?.count || 0,
+    },
+  };
+});
+
+// GET /stats/users - User activity over time
+router.get('/stats/users', async (request, env) => {
+  const url = new URL(request.url);
+  const deploy_token = url.searchParams.get('deploy_token');
+  const querySubdomain = url.searchParams.get('subdomain');
+  const days = Math.min(parseInt(url.searchParams.get('days') || '30'), 90);
+
+  const originSubdomain = getSubdomain(request);
+  const subdomain = querySubdomain || (originSubdomain !== 'dashboard' ? originSubdomain : null);
+  if (!subdomain) {
+    return new Response(JSON.stringify({ error: 'Subdomain required' }), { status: 400 });
+  }
+
+  const user = await getSession(request, env);
+  const ownerSession = await getOwnerSession(request, env);
+  const isOwner = (user && await isAppOwner(env, subdomain, user.email)) ||
+                  (ownerSession && await isAppOwner(env, subdomain, ownerSession.email));
+  const validToken = deploy_token && await validateDeployToken(env, subdomain, deploy_token);
+
+  if (!isOwner && !validToken) {
+    return new Response(JSON.stringify({ error: 'Not authorized' }), { status: 403 });
+  }
+
+  const startDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+
+  // Daily active users over time
+  const dauOverTime = await env.DB.prepare(`
+    SELECT date, COUNT(*) as active_users
+    FROM user_activity
+    WHERE app_subdomain = ? AND date >= ?
+    GROUP BY date
+    ORDER BY date
+  `).bind(subdomain, startDate).all();
+
+  // New signups over time
+  const signupsOverTime = await env.DB.prepare(`
+    SELECT date(created_at) as date, COUNT(*) as signups
+    FROM app_users
+    WHERE app_subdomain = ? AND created_at >= ?
+    GROUP BY date(created_at)
+    ORDER BY date
+  `).bind(subdomain, startDate).all();
+
+  return {
+    period_days: days,
+    daily_active_users: dauOverTime.results,
+    signups: signupsOverTime.results,
+  };
+});
+
+// GET /stats/traffic - Page views and visitors over time
+router.get('/stats/traffic', async (request, env) => {
+  const url = new URL(request.url);
+  const deploy_token = url.searchParams.get('deploy_token');
+  const querySubdomain = url.searchParams.get('subdomain');
+  const period = url.searchParams.get('period') || 'day';
+
+  const originSubdomain = getSubdomain(request);
+  const subdomain = querySubdomain || (originSubdomain !== 'dashboard' ? originSubdomain : null);
+  if (!subdomain) {
+    return new Response(JSON.stringify({ error: 'Subdomain required' }), { status: 400 });
+  }
+
+  const user = await getSession(request, env);
+  const ownerSession = await getOwnerSession(request, env);
+  const isOwner = (user && await isAppOwner(env, subdomain, user.email)) ||
+                  (ownerSession && await isAppOwner(env, subdomain, ownerSession.email));
+  const validToken = deploy_token && await validateDeployToken(env, subdomain, deploy_token);
+
+  if (!isOwner && !validToken) {
+    return new Response(JSON.stringify({ error: 'Not authorized' }), { status: 403 });
+  }
+
+  if (!env.ANALYTICS) {
+    return { error: 'Analytics not configured', data: [] };
+  }
+
+  try {
+    let interval, groupBy, periodAlias;
+    if (period === 'hour' || period === '24h') {
+      interval = "INTERVAL '24' HOUR";
+      groupBy = 'toStartOfHour(timestamp)';
+      periodAlias = 'formatDateTime(time_bucket, \'%Y-%m-%d %H\')';
+    } else if (period === 'day' || period === '7d') {
+      interval = "INTERVAL '14' DAY";
+      groupBy = 'toDate(timestamp)';
+      periodAlias = 'formatDateTime(time_bucket, \'%Y-%m-%d\')';
+    } else if (period === 'week') {
+      interval = "INTERVAL '90' DAY";
+      groupBy = 'toStartOfWeek(timestamp)';
+      periodAlias = 'formatDateTime(time_bucket, \'%Y-W%V\')';
+    } else {
+      interval = "INTERVAL '365' DAY";
+      groupBy = 'toStartOfMonth(timestamp)';
+      periodAlias = 'formatDateTime(time_bucket, \'%Y-%m\')';
+    }
+
+    const query = `
+      SELECT
+        ${groupBy} as time_bucket,
+        COUNT() as page_views,
+        COUNT(DISTINCT blob2) as unique_visitors
+      FROM "itsalive-analytics"
+      WHERE index1 = '${subdomain}'
+      AND timestamp >= NOW() - ${interval}
+      GROUP BY time_bucket
+      ORDER BY time_bucket
+    `;
+
+    const result = await queryAnalytics(env, query);
+
+    if (result.error) {
+      return { period, data: [], error: result.error };
+    }
+
+    // Format the response with period labels
+    const data = (result?.data || []).map(row => ({
+      period: row.time_bucket,
+      page_views: row.page_views,
+      unique_visitors: row.unique_visitors,
+    }));
+
+    return {
+      period,
+      data,
+    };
+  } catch (e) {
+    console.error('Analytics query error:', e);
+    return { error: 'Analytics query failed', details: e.message, data: [] };
+  }
+});
+
+// GET /stats/debug - Debug Analytics Engine (temporary)
+router.get('/stats/debug', async (request, env) => {
+  try {
+    // Try a simpler query first
+    const simpleQuery = `SELECT COUNT() as total FROM "itsalive-analytics"`;
+
+    // Make a raw fetch to see full response
+    const response = await fetch(
+      `https://api.cloudflare.com/client/v4/accounts/${env.CLOUDFLARE_ACCOUNT_ID}/analytics_engine/sql`,
+      {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${env.CLOUDFLARE_API_TOKEN}`,
+          'Content-Type': 'text/plain',
+        },
+        body: simpleQuery,
+      }
+    );
+
+    const responseText = await response.text();
+    let responseJson;
+    try {
+      responseJson = JSON.parse(responseText);
+    } catch (e) {
+      responseJson = null;
+    }
+
+    return {
+      status: response.status,
+      ok: response.ok,
+      response_text: responseText.substring(0, 500),
+      response_json: responseJson,
+      has_account_id: !!env.CLOUDFLARE_ACCOUNT_ID,
+      has_api_token: !!env.CLOUDFLARE_API_TOKEN,
+    };
+  } catch (e) {
+    return { error: e.message, stack: e.stack };
+  }
+});
+
+// GET /stats/ai - AI usage over time
+router.get('/stats/ai', async (request, env) => {
+  const url = new URL(request.url);
+  const deploy_token = url.searchParams.get('deploy_token');
+  const querySubdomain = url.searchParams.get('subdomain');
+  const days = Math.min(parseInt(url.searchParams.get('days') || '30'), 90);
+
+  const originSubdomain = getSubdomain(request);
+  const subdomain = querySubdomain || (originSubdomain !== 'dashboard' ? originSubdomain : null);
+  if (!subdomain) {
+    return new Response(JSON.stringify({ error: 'Subdomain required' }), { status: 400 });
+  }
+
+  const user = await getSession(request, env);
+  const ownerSession = await getOwnerSession(request, env);
+  const isOwner = (user && await isAppOwner(env, subdomain, user.email)) ||
+                  (ownerSession && await isAppOwner(env, subdomain, ownerSession.email));
+  const validToken = deploy_token && await validateDeployToken(env, subdomain, deploy_token);
+
+  if (!isOwner && !validToken) {
+    return new Response(JSON.stringify({ error: 'Not authorized' }), { status: 403 });
+  }
+
+  const startDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+
+  // AI usage over time
+  const usageOverTime = await env.DB.prepare(`
+    SELECT date(created_at) as date,
+           COUNT(*) as requests,
+           SUM(credits_used) as credits,
+           SUM(input_tokens + output_tokens) as tokens
+    FROM ai_usage
+    WHERE app_subdomain = ? AND created_at >= ?
+    GROUP BY date(created_at)
+    ORDER BY date
+  `).bind(subdomain, startDate).all();
+
+  // Usage by feature
+  const byFeature = await env.DB.prepare(`
+    SELECT
+      CASE
+        WHEN model LIKE '%dall-e%' THEN 'image'
+        WHEN tier = 'image' THEN 'image'
+        WHEN tier = 'transcribe' THEN 'transcribe'
+        WHEN tier = 'tts' THEN 'tts'
+        ELSE 'chat'
+      END as feature,
+      COUNT(*) as requests,
+      SUM(credits_used) as credits
+    FROM ai_usage
+    WHERE app_subdomain = ? AND created_at >= ?
+    GROUP BY feature
+  `).bind(subdomain, startDate).all();
+
+  // Usage by provider/tier for the stats page display
+  const byProviderTier = await env.DB.prepare(`
+    SELECT
+      provider,
+      tier,
+      COUNT(*) as requests,
+      SUM(input_tokens + output_tokens) as total_tokens,
+      SUM(credits_used) as total_credits
+    FROM ai_usage
+    WHERE app_subdomain = ? AND created_at >= ?
+    GROUP BY provider, tier
+    ORDER BY total_credits DESC
+  `).bind(subdomain, startDate).all();
+
+  return {
+    period_days: days,
+    daily_usage: usageOverTime.results,
+    by_feature: byFeature.results,
+    data: byProviderTier.results,
+  };
+});
+
+// ============ OG Routes (for dynamic meta tags in SPAs) ============
+
+// PUT /og/routes - Configure OG routes (replaces existing)
+router.put('/og/routes', async (request, env) => {
+  const subdomain = getSubdomain(request);
+  if (!subdomain) {
+    return new Response(JSON.stringify({ error: 'Invalid origin' }), { status: 400 });
+  }
+
+  const { routes, deploy_token } = await request.json();
+
+  const user = await getSession(request, env);
+  const isOwner = user && await isAppOwner(env, subdomain, user.email);
+  const validToken = deploy_token && await validateDeployToken(env, subdomain, deploy_token);
+
+  if (!isOwner && !validToken) {
+    return new Response(JSON.stringify({ error: 'Not authorized' }), { status: 403 });
+  }
+
+  if (!Array.isArray(routes)) {
+    return new Response(JSON.stringify({ error: 'routes must be an array' }), { status: 400 });
+  }
+
+  // Validate each route
+  for (const route of routes) {
+    if (!route.pattern || !route.collection) {
+      return new Response(JSON.stringify({ error: 'Each route must have pattern and collection' }), { status: 400 });
+    }
+    if (!route.pattern.startsWith('/')) {
+      return new Response(JSON.stringify({ error: 'Pattern must start with /' }), { status: 400 });
+    }
+  }
+
+  // Delete existing routes and insert new ones
+  await env.DB.prepare('DELETE FROM og_routes WHERE app_subdomain = ?').bind(subdomain).run();
+
+  for (const route of routes) {
+    const id = generateId();
+    await env.DB.prepare(`
+      INSERT INTO og_routes (id, app_subdomain, pattern, collection, id_param, title_field, description_field, image_field)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).bind(
+      id,
+      subdomain,
+      route.pattern,
+      route.collection,
+      route.id_param || 'id',
+      route.title_field || null,
+      route.description_field || null,
+      route.image_field || null
+    ).run();
+  }
+
+  return { ok: true, routes_count: routes.length };
+});
+
+// GET /og/routes - List configured OG routes
+router.get('/og/routes', async (request, env) => {
+  const subdomain = getSubdomain(request);
+  if (!subdomain) {
+    return new Response(JSON.stringify({ error: 'Invalid origin' }), { status: 400 });
+  }
+
+  const result = await env.DB.prepare(
+    'SELECT pattern, collection, id_param, title_field, description_field, image_field, created_at FROM og_routes WHERE app_subdomain = ?'
+  ).bind(subdomain).all();
+
+  return { routes: result.results };
+});
+
+// DELETE /og/routes - Clear all OG routes
+router.delete('/og/routes', async (request, env) => {
+  const subdomain = getSubdomain(request);
+  if (!subdomain) {
+    return new Response(JSON.stringify({ error: 'Invalid origin' }), { status: 400 });
+  }
+
+  const body = await request.json().catch(() => ({}));
+  const { deploy_token } = body;
+
+  const user = await getSession(request, env);
+  const isOwner = user && await isAppOwner(env, subdomain, user.email);
+  const validToken = deploy_token && await validateDeployToken(env, subdomain, deploy_token);
+
+  if (!isOwner && !validToken) {
+    return new Response(JSON.stringify({ error: 'Not authorized' }), { status: 403 });
+  }
+
+  await env.DB.prepare('DELETE FROM og_routes WHERE app_subdomain = ?').bind(subdomain).run();
+
+  return { ok: true };
 });
 
 // 404 handler

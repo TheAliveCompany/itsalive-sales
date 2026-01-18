@@ -6,7 +6,7 @@ Building mushroom (a writing platform) on itsalive was smooth overall. Here are 
 
 ## Already on your roadmap (excited for these!)
 
-### Image uploads
+### Image uploads ✅ DONE
 
 **What we need:** Users writing stories need to embed images in their rich text content.
 
@@ -184,14 +184,14 @@ await fetch('https://api.itsalive.co/db/digests/user123-2024-01-15', {
 
 ## Would significantly improve the app
 
-### Location-based queries
+### Location-based queries ✅ DONE
 **Problem:** We want to show "writers within 50 miles" but can only do text matching on city names.
 
 **Wish:**
 - Store lat/lng coordinates (or auto-geocode from city name)
 - Query by distance: `?near=lat,lng&radius=50mi`
 
-### Batch/bulk reads
+### Batch/bulk reads ✅ DONE
 **Problem:** To display a feed, we fetch profiles one-by-one in a loop. Slow and lots of requests.
 
 **Wish:**
@@ -205,7 +205,7 @@ await fetch('https://api.itsalive.co/db/digests/user123-2024-01-15', {
 - `?search=keyword` parameter that searches across text fields
 - Even basic substring matching would help
 
-### Aggregation queries
+### Aggregation queries ✅ DONE
 **Problem:** To get counts, we fetch all items and count client-side.
 
 **Wish:**
@@ -216,7 +216,7 @@ await fetch('https://api.itsalive.co/db/digests/user123-2024-01-15', {
 
 ## Would improve SEO / sharing
 
-### Dynamic meta tags / SSR
+### Dynamic meta tags / SSR ✅ DONE
 **Problem:** All pages have the same OG tags because it's a static SPA. Sharing a specific story shows generic "mushroom" preview, not the story title.
 
 **Wish:**
@@ -260,16 +260,38 @@ await fetch('https://api.itsalive.co/db/digests/user123-2024-01-15', {
 - `npx itsalive-co --watch` for auto-deploy on file changes
 - `npx itsalive-co logs` to see recent auth/db activity
 
-### Dashboard
+### Dashboard ✅ DONE (partial)
 - Web UI to browse collections, see users, basic analytics
 - Useful for debugging and understanding usage
+- *Stats dashboard implemented at dashboard.itsalive.co/stats/{app}*
 
 ---
 
 ## Summary: Top 3 requests
 
-1. **Batch reads** - fetch multiple docs by ID (biggest perf win)
-2. **Location queries** - distance-based filtering
-3. **Dynamic OG images** - or any SSR capability for meta tags
+1. **Batch reads** ✅ DONE - `?id=abc,def,ghi`
+2. **Location queries** ✅ DONE - `?near=lat,lng&radius=50mi`
+3. **Dynamic OG tags** ✅ DONE - configure via `/_og/routes`
 
 Thanks for building itsalive — the auth + database + hosting combo made it possible to build this entire app in a single HTML file. Very cool.
+
+---
+
+## Status Summary
+
+**✅ Implemented:**
+- Image uploads (`POST /uploads`)
+- Batch/bulk reads (`?id=abc,def,ghi`)
+- Location queries (`?near=lat,lng&radius=50mi`)
+- Count/aggregation (`/db/:collection/_count`)
+- Dynamic OG tags (`/_og/routes`)
+- Stats dashboard (`/stats/{app}`)
+
+**⏳ Not yet implemented:**
+- Scheduled emails / digests
+- Full-text search
+- Real-time subscriptions
+- Webhooks
+- Relational/nested queries
+- Data export
+- CLI --watch mode

@@ -1,9 +1,26 @@
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     const url = new URL(request.url);
     const host = request.headers.get('host');
+    const startTime = Date.now();
 
-    // Landing page for root domain
+    // Dashboard subdomain
+    if (host === 'dashboard.itsalive.co') {
+      // Stats page: /stats/appname
+      const statsMatch = url.pathname.match(/^\/stats\/([a-z0-9-]+)$/i);
+      if (statsMatch) {
+        return new Response(statsPage(statsMatch[1]), {
+          headers: { 'content-type': 'text/html' },
+        });
+      }
+
+      // Main dashboard
+      return new Response(dashboardPage(), {
+        headers: { 'content-type': 'text/html' },
+      });
+    }
+
+    // Landing page for root domain - no tracking
     if (host === 'itsalive.co' || host === 'www.itsalive.co') {
       // Serve OG image from R2
       if (url.pathname === '/og-image.png') {
@@ -112,6 +129,161 @@ export default {
           'Cache-Control': 'public, max-age=31536000, immutable',
         },
       });
+    }
+
+    // Image optimization endpoint: /_images/path/to/image.jpg?w=400&q=80&f=webp
+    if (url.pathname.startsWith('/_images/')) {
+      const imagePath = url.pathname.replace('/_images/', '');
+      const key = `${subdomain}/uploads/${imagePath}`;
+
+      // Parse transformation params
+      const width = parseInt(url.searchParams.get('w') || url.searchParams.get('width') || '0') || undefined;
+      const height = parseInt(url.searchParams.get('h') || url.searchParams.get('height') || '0') || undefined;
+      const quality = parseInt(url.searchParams.get('q') || url.searchParams.get('quality') || '80');
+      const format = url.searchParams.get('f') || url.searchParams.get('format') || 'webp';
+      const fit = url.searchParams.get('fit') || 'scale-down'; // cover, contain, scale-down, crop
+
+      // Validate params
+      if (width && (width < 1 || width > 4000)) {
+        return new Response(JSON.stringify({ error: 'Width must be between 1 and 4000' }), { status: 400 });
+      }
+      if (height && (height < 1 || height > 4000)) {
+        return new Response(JSON.stringify({ error: 'Height must be between 1 and 4000' }), { status: 400 });
+      }
+      if (quality < 1 || quality > 100) {
+        return new Response(JSON.stringify({ error: 'Quality must be between 1 and 100' }), { status: 400 });
+      }
+      if (!['webp', 'avif', 'jpeg', 'jpg', 'png', 'auto'].includes(format)) {
+        return new Response(JSON.stringify({ error: 'Format must be webp, avif, jpeg, png, or auto' }), { status: 400 });
+      }
+
+      // Get original image from R2
+      const object = await env.SITES.get(key);
+      if (!object) {
+        return new Response('Image not found', { status: 404 });
+      }
+
+      const originalContentType = object.httpMetadata?.contentType || 'image/jpeg';
+
+      // If no transformations requested, return original
+      if (!width && !height && format === 'auto') {
+        return new Response(object.body, {
+          headers: {
+            'Content-Type': originalContentType,
+            'Cache-Control': 'public, max-age=31536000, immutable',
+          },
+        });
+      }
+
+      // Build cache key for transformed image
+      const cacheKey = `${key}?w=${width || ''}&h=${height || ''}&q=${quality}&f=${format}&fit=${fit}`;
+      const cache = caches.default;
+      const cacheRequest = new Request(`https://cache.itsalive.co/${cacheKey}`);
+
+      // Check cache first
+      let cachedResponse = await cache.match(cacheRequest);
+      if (cachedResponse) {
+        return cachedResponse;
+      }
+
+      // Determine output content type
+      let outputFormat = format;
+      if (format === 'auto') {
+        // Use Accept header to determine best format
+        const accept = request.headers.get('Accept') || '';
+        if (accept.includes('image/avif')) {
+          outputFormat = 'avif';
+        } else if (accept.includes('image/webp')) {
+          outputFormat = 'webp';
+        } else {
+          outputFormat = 'jpeg';
+        }
+      }
+      if (outputFormat === 'jpg') outputFormat = 'jpeg';
+
+      const contentTypeMap = {
+        webp: 'image/webp',
+        avif: 'image/avif',
+        jpeg: 'image/jpeg',
+        png: 'image/png',
+      };
+
+      // Use Cloudflare Image Resizing
+      // Create a URL to the original image that Cloudflare can fetch
+      const imageUrl = `https://${subdomain}.itsalive.co/uploads/${imagePath}`;
+
+      try {
+        const resizedResponse = await fetch(imageUrl, {
+          cf: {
+            image: {
+              width: width,
+              height: height,
+              quality: quality,
+              format: outputFormat,
+              fit: fit,
+            },
+          },
+        });
+
+        if (!resizedResponse.ok) {
+          // Fallback: return original if resizing fails
+          return new Response(object.body, {
+            headers: {
+              'Content-Type': originalContentType,
+              'Cache-Control': 'public, max-age=31536000, immutable',
+              'X-Image-Optimized': 'false',
+              'X-Fallback-Reason': 'resize-failed',
+            },
+          });
+        }
+
+        // Check if transformation actually happened by comparing content types
+        const responseContentType = resizedResponse.headers.get('content-type') || '';
+        const expectedContentType = contentTypeMap[outputFormat];
+        const wasTransformed = responseContentType.includes(outputFormat) ||
+          (outputFormat === 'jpeg' && responseContentType.includes('jpeg'));
+
+        if (!wasTransformed && outputFormat !== 'png' && !originalContentType.includes(outputFormat)) {
+          // Image Resizing didn't transform the image (likely not enabled)
+          // Return original with headers indicating the situation
+          return new Response(object.body, {
+            headers: {
+              'Content-Type': originalContentType,
+              'Cache-Control': 'public, max-age=31536000, immutable',
+              'X-Image-Optimized': 'false',
+              'X-Fallback-Reason': 'image-resizing-not-enabled',
+              'X-Requested-Format': outputFormat,
+            },
+          });
+        }
+
+        // Create response with caching headers
+        const response = new Response(resizedResponse.body, {
+          headers: {
+            'Content-Type': responseContentType || contentTypeMap[outputFormat] || 'image/jpeg',
+            'Cache-Control': 'public, max-age=31536000, immutable',
+            'Vary': 'Accept',
+            'X-Image-Optimized': 'true',
+            'X-Original-Size': object.size?.toString() || 'unknown',
+          },
+        });
+
+        // Cache the transformed image
+        ctx.waitUntil(cache.put(cacheRequest, response.clone()));
+
+        return response;
+      } catch (err) {
+        // Fallback: return original if anything fails
+        return new Response(object.body, {
+          headers: {
+            'Content-Type': originalContentType,
+            'Cache-Control': 'public, max-age=31536000, immutable',
+            'X-Image-Optimized': 'false',
+            'X-Fallback-Reason': 'error',
+            'X-Error': err.message,
+          },
+        });
+      }
     }
 
     // Proxy uploads API to API worker
@@ -424,6 +596,7 @@ export default {
     let object = await env.SITES.get(key);
 
     // Fallback to index.html for SPA routing
+    const isSpaFallback = !object;
     if (!object) {
       object = await env.SITES.get(`${subdomain}/index.html`);
     }
@@ -439,9 +612,65 @@ export default {
     headers.set('content-type', getContentType(path));
     headers.set('cache-control', 'public, max-age=3600');
 
+    // Check if this SPA fallback matches an OG route for dynamic meta tags
+    if (isSpaFallback && url.pathname !== '/') {
+      const ogData = await getOGDataForPath(env, subdomain, url.pathname);
+      if (ogData) {
+        const html = await object.text();
+        const modifiedHtml = injectOGTags(html, ogData, subdomain);
+        // Track page view
+        ctx.waitUntil(trackPageView(env, request, subdomain));
+        return new Response(modifiedHtml, {
+          headers: {
+            'content-type': 'text/html',
+            'cache-control': 'public, max-age=60',
+          },
+        });
+      }
+    }
+
+    // Track page view for HTML pages
+    const contentType = getContentType(path);
+    if (contentType === 'text/html' && subdomain) {
+      ctx.waitUntil(trackPageView(env, request, subdomain));
+    }
+
     return new Response(object.body, { headers });
   }
 };
+
+// Track page view to Analytics Engine
+async function trackPageView(env, request, subdomain) {
+  try {
+    if (!env.ANALYTICS) return;
+
+    // Create visitor hash from IP + User-Agent (privacy-friendly, changes daily)
+    const ip = request.headers.get('cf-connecting-ip') || 'unknown';
+    const ua = request.headers.get('user-agent') || 'unknown';
+    const today = new Date().toISOString().slice(0, 10);
+    const visitorData = `${ip}:${ua}:${today}`;
+
+    // Simple hash function for visitor ID
+    const encoder = new TextEncoder();
+    const data = encoder.encode(visitorData);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+    const hashArray = new Uint8Array(hashBuffer);
+    const visitorHash = Array.from(hashArray.slice(0, 8))
+      .map(b => b.toString(16).padStart(2, '0'))
+      .join('');
+
+    const country = request.cf?.country || 'XX';
+
+    env.ANALYTICS.writeDataPoint({
+      blobs: [subdomain, visitorHash, country],
+      doubles: [1], // page view count
+      indexes: [subdomain],
+    });
+  } catch (e) {
+    // Don't fail the request if analytics fails
+    console.error('Analytics error:', e);
+  }
+}
 
 function getContentType(path) {
   const ext = path.split('.').pop();
@@ -848,6 +1077,149 @@ function dashboardPage() {
       background: rgba(255, 189, 46, 0.1);
       color: #ffbd2e;
     }
+
+    /* Stats styles */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 1rem;
+      margin-bottom: 2rem;
+    }
+    .stat-card {
+      background: rgba(255,255,255,0.03);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 12px;
+      padding: 1.25rem;
+      text-align: center;
+    }
+    .stat-value {
+      font-size: 2rem;
+      font-weight: 700;
+      background: linear-gradient(135deg, #00d4ff, #7b2dff);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .stat-label {
+      font-size: 0.8rem;
+      color: #666;
+      margin-top: 0.25rem;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .stats-section {
+      margin-bottom: 2rem;
+    }
+    .stats-section h3 {
+      font-size: 1rem;
+      color: #888;
+      margin-bottom: 1rem;
+      padding-bottom: 0.5rem;
+      border-bottom: 1px solid #222;
+    }
+    .chart-container {
+      background: rgba(0,0,0,0.3);
+      border-radius: 8px;
+      padding: 1rem;
+      min-height: 200px;
+    }
+    .chart-bars {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      height: 150px;
+      gap: 4px;
+      padding: 0 0.5rem;
+    }
+    .chart-bar-wrapper {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      height: 100%;
+    }
+    .chart-bar {
+      width: 100%;
+      max-width: 40px;
+      background: linear-gradient(180deg, #00d4ff, #7b2dff);
+      border-radius: 4px 4px 0 0;
+      min-height: 4px;
+      transition: height 0.3s;
+    }
+    .chart-bar.secondary {
+      background: linear-gradient(180deg, #ff2d7b, #ff6b35);
+      opacity: 0.7;
+    }
+    .chart-label {
+      font-size: 0.7rem;
+      color: #666;
+      margin-top: 0.5rem;
+      text-align: center;
+    }
+    .chart-legend {
+      display: flex;
+      justify-content: center;
+      gap: 1.5rem;
+      margin-top: 1rem;
+      font-size: 0.8rem;
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      color: #888;
+    }
+    .legend-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+    }
+    .legend-dot.primary { background: #00d4ff; }
+    .legend-dot.secondary { background: #ff2d7b; }
+    .period-selector {
+      display: flex;
+      gap: 0.5rem;
+      margin-bottom: 1rem;
+    }
+    .period-btn {
+      padding: 0.4rem 0.8rem;
+      background: transparent;
+      border: 1px solid #333;
+      color: #888;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.8rem;
+      transition: all 0.2s;
+    }
+    .period-btn:hover {
+      border-color: #555;
+      color: #fff;
+    }
+    .period-btn.active {
+      background: #fff;
+      color: #000;
+      border-color: #fff;
+    }
+    .ai-usage-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.85rem;
+    }
+    .ai-usage-table th {
+      text-align: left;
+      padding: 0.75rem;
+      border-bottom: 1px solid #333;
+      color: #666;
+      font-weight: 500;
+    }
+    .ai-usage-table td {
+      padding: 0.75rem;
+      border-bottom: 1px solid #222;
+    }
+    .no-data {
+      text-align: center;
+      padding: 2rem;
+      color: #666;
+    }
   </style>
 </head>
 <body>
@@ -937,6 +1309,7 @@ function dashboardPage() {
             <div class="app-meta">Created \${new Date(app.created_at).toLocaleDateString()}</div>
           </div>
           <div class="app-actions">
+            <a href="/stats/\${app.subdomain}" class="btn btn-secondary btn-small">Stats</a>
             <button class="btn btn-secondary btn-small" onclick="openSettings('\${app.subdomain}')">Settings</button>
             <a href="https://\${app.subdomain}.itsalive.co" target="_blank" class="btn btn-small">Visit</a>
           </div>
@@ -1344,10 +1717,780 @@ function dashboardPage() {
       }
     });
 
+    // Stats modal
+    let currentStatsPeriod = 'day';
+    let currentStatsSubdomain = null;
+
+    async function openStats(subdomain) {
+      currentStatsSubdomain = subdomain;
+      const modal = document.createElement('div');
+      modal.className = 'modal-overlay';
+      modal.id = 'stats-modal';
+      modal.onclick = (e) => { if (e.target === modal) modal.remove(); };
+      modal.innerHTML = \`
+        <div class="modal" style="max-width:900px;width:95%;">
+          <h2>Stats: \${subdomain}</h2>
+          <div id="stats-content"><p style="color:#888;">Loading...</p></div>
+          <div style="margin-top:1.5rem;text-align:right;">
+            <button class="btn btn-secondary" onclick="this.closest('.modal-overlay').remove()">Close</button>
+          </div>
+        </div>
+      \`;
+      document.getElementById('modal-container').appendChild(modal);
+      await loadStats(subdomain);
+    }
+
+    async function loadStats(subdomain) {
+      const container = document.getElementById('stats-content');
+
+      try {
+        const [summaryRes, trafficRes, aiRes] = await Promise.all([
+          fetch(API + '/stats/summary?subdomain=' + subdomain, { credentials: 'include' }),
+          fetch(API + '/stats/traffic?subdomain=' + subdomain + '&period=' + currentStatsPeriod, { credentials: 'include' }),
+          fetch(API + '/stats/ai?subdomain=' + subdomain + '&period=month', { credentials: 'include' })
+        ]);
+
+        const summary = await summaryRes.json();
+        const traffic = await trafficRes.json();
+        const ai = await aiRes.json();
+
+        if (summary.error) {
+          container.innerHTML = '<div class="message error">' + summary.error + '</div>';
+          return;
+        }
+
+        // Format numbers
+        const fmt = (n) => {
+          if (n >= 1000000) return (n/1000000).toFixed(1) + 'M';
+          if (n >= 1000) return (n/1000).toFixed(1) + 'K';
+          return (n || 0).toString();
+        };
+
+        // Build traffic chart
+        const trafficData = traffic.data || [];
+        const maxViews = Math.max(...trafficData.map(d => d.page_views || 0), 1);
+        const maxVisitors = Math.max(...trafficData.map(d => d.unique_visitors || 0), 1);
+        const chartMax = Math.max(maxViews, maxVisitors);
+
+        let trafficChart = '';
+        if (trafficData.length > 0) {
+          trafficChart = \`
+            <div class="chart-bars">
+              \${trafficData.slice(-14).map(d => {
+                const viewsHeight = chartMax > 0 ? ((d.page_views || 0) / chartMax) * 130 : 0;
+                const visitorsHeight = chartMax > 0 ? ((d.unique_visitors || 0) / chartMax) * 130 : 0;
+                const label = formatChartLabel(d.period, currentStatsPeriod);
+                return \`
+                  <div class="chart-bar-wrapper">
+                    <div style="display:flex;gap:2px;align-items:flex-end;height:130px;">
+                      <div class="chart-bar" style="height:\${viewsHeight}px;" title="Views: \${d.page_views || 0}"></div>
+                      <div class="chart-bar secondary" style="height:\${visitorsHeight}px;" title="Visitors: \${d.unique_visitors || 0}"></div>
+                    </div>
+                    <div class="chart-label">\${label}</div>
+                  </div>
+                \`;
+              }).join('')}
+            </div>
+            <div class="chart-legend">
+              <div class="legend-item"><div class="legend-dot primary"></div> Page Views</div>
+              <div class="legend-item"><div class="legend-dot secondary"></div> Unique Visitors</div>
+            </div>
+          \`;
+        } else {
+          trafficChart = '<div class="no-data">No traffic data yet</div>';
+        }
+
+        // Build AI usage table
+        let aiTable = '';
+        const aiData = ai.data || [];
+        if (aiData.length > 0) {
+          const totalCredits = aiData.reduce((sum, d) => sum + (d.total_credits || 0), 0);
+          const totalRequests = aiData.reduce((sum, d) => sum + (d.requests || 0), 0);
+          aiTable = \`
+            <table class="ai-usage-table">
+              <thead>
+                <tr>
+                  <th>Provider</th>
+                  <th>Tier</th>
+                  <th>Requests</th>
+                  <th>Tokens</th>
+                  <th>Credits</th>
+                </tr>
+              </thead>
+              <tbody>
+                \${aiData.map(d => \`
+                  <tr>
+                    <td>\${d.provider}</td>
+                    <td>\${d.tier}</td>
+                    <td>\${fmt(d.requests)}</td>
+                    <td>\${fmt(d.total_tokens)}</td>
+                    <td>\${fmt(d.total_credits)}</td>
+                  </tr>
+                \`).join('')}
+              </tbody>
+            </table>
+            <p style="margin-top:1rem;color:#666;font-size:0.85rem;">
+              Total: \${fmt(totalRequests)} requests, \${fmt(totalCredits)} credits used this month
+            </p>
+          \`;
+        } else {
+          aiTable = '<div class="no-data">No AI usage this month</div>';
+        }
+
+        container.innerHTML = \`
+          <div class="stats-grid">
+            <div class="stat-card">
+              <div class="stat-value">\${fmt(summary.dau)}</div>
+              <div class="stat-label">DAU</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-value">\${fmt(summary.wau)}</div>
+              <div class="stat-label">WAU</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-value">\${fmt(summary.mau)}</div>
+              <div class="stat-label">MAU</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-value">\${fmt(summary.total_users)}</div>
+              <div class="stat-label">Total Users</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-value">\${fmt(summary.signups_today)}</div>
+              <div class="stat-label">Signups Today</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-value">\${fmt(summary.total_documents)}</div>
+              <div class="stat-label">Documents</div>
+            </div>
+          </div>
+
+          <div class="stats-section">
+            <h3>Traffic</h3>
+            <div class="period-selector">
+              <button class="period-btn \${currentStatsPeriod === 'hour' ? 'active' : ''}" onclick="changeStatsPeriod('hour')">Hourly</button>
+              <button class="period-btn \${currentStatsPeriod === 'day' ? 'active' : ''}" onclick="changeStatsPeriod('day')">Daily</button>
+              <button class="period-btn \${currentStatsPeriod === 'week' ? 'active' : ''}" onclick="changeStatsPeriod('week')">Weekly</button>
+              <button class="period-btn \${currentStatsPeriod === 'month' ? 'active' : ''}" onclick="changeStatsPeriod('month')">Monthly</button>
+            </div>
+            <div class="chart-container">
+              \${trafficChart}
+            </div>
+          </div>
+
+          <div class="stats-section">
+            <h3>AI Usage (This Month)</h3>
+            \${aiTable}
+          </div>
+        \`;
+      } catch (err) {
+        container.innerHTML = '<div class="message error">Error loading stats: ' + err.message + '</div>';
+      }
+    }
+
+    function formatChartLabel(period, type) {
+      if (!period) return '';
+      if (type === 'hour') {
+        const h = parseInt(period.split(' ')[1] || period);
+        return h + ':00';
+      }
+      if (type === 'day') {
+        const d = new Date(period);
+        return (d.getMonth()+1) + '/' + d.getDate();
+      }
+      if (type === 'week') {
+        return 'W' + period.split('-W')[1];
+      }
+      if (type === 'month') {
+        const parts = period.split('-');
+        return parts[1] + '/' + parts[0].slice(2);
+      }
+      return period;
+    }
+
+    async function changeStatsPeriod(period) {
+      currentStatsPeriod = period;
+      if (currentStatsSubdomain) {
+        document.getElementById('stats-content').innerHTML = '<p style="color:#888;">Loading...</p>';
+        await loadStats(currentStatsSubdomain);
+      }
+    }
+
     async function logout() {
       await fetch(API + '/owner/logout', { method: 'POST', credentials: 'include' });
       location.reload();
     }
+
+    init();
+  </script>
+</body>
+</html>`;
+}
+
+function statsPage(subdomain) {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Stats - ${subdomain} - itsalive.co</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      background: #0a0a0b;
+      color: #fff;
+      min-height: 100vh;
+    }
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 1.5rem 2rem;
+      border-bottom: 1px solid #1a1a1a;
+      background: #0d0d0d;
+    }
+    .header-left {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+    .logo {
+      font-size: 1.5rem;
+      font-weight: 800;
+      background: linear-gradient(135deg, #00d4ff 0%, #7b2dff 50%, #ff2d7b 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      text-decoration: none;
+    }
+    .back-link {
+      color: #666;
+      text-decoration: none;
+      font-size: 0.9rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .back-link:hover { color: #fff; }
+    .app-badge {
+      background: rgba(255,255,255,0.1);
+      padding: 0.4rem 0.8rem;
+      border-radius: 20px;
+      font-size: 0.85rem;
+      color: #00d4ff;
+    }
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 2rem;
+    }
+    .page-header {
+      margin-bottom: 2rem;
+    }
+    .page-title {
+      font-size: 2rem;
+      font-weight: 700;
+      margin-bottom: 0.5rem;
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+    .page-subtitle {
+      color: #666;
+      font-size: 0.95rem;
+    }
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 1.25rem;
+      margin-bottom: 2.5rem;
+    }
+    .stat-card {
+      background: linear-gradient(135deg, rgba(0,212,255,0.05) 0%, rgba(123,45,255,0.05) 100%);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 16px;
+      padding: 1.5rem;
+      position: relative;
+      overflow: hidden;
+    }
+    .stat-card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 3px;
+      background: linear-gradient(90deg, #00d4ff, #7b2dff);
+      opacity: 0.5;
+    }
+    .stat-card.highlight::before {
+      opacity: 1;
+    }
+    .stat-value {
+      font-size: 2.5rem;
+      font-weight: 800;
+      background: linear-gradient(135deg, #00d4ff, #7b2dff);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      line-height: 1.1;
+    }
+    .stat-label {
+      font-size: 0.8rem;
+      color: #888;
+      margin-top: 0.5rem;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+    .stat-change {
+      font-size: 0.75rem;
+      margin-top: 0.5rem;
+      padding: 0.2rem 0.5rem;
+      border-radius: 10px;
+      display: inline-block;
+    }
+    .stat-change.up { background: rgba(39,202,64,0.15); color: #27ca40; }
+    .stat-change.down { background: rgba(255,68,68,0.15); color: #ff4444; }
+    .section {
+      margin-bottom: 3rem;
+    }
+    .section-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 1.5rem;
+    }
+    .section-title {
+      font-size: 1.25rem;
+      font-weight: 600;
+      color: #fff;
+    }
+    .period-tabs {
+      display: flex;
+      gap: 0.5rem;
+      background: rgba(255,255,255,0.03);
+      padding: 0.25rem;
+      border-radius: 8px;
+    }
+    .period-tab {
+      padding: 0.5rem 1rem;
+      background: transparent;
+      border: none;
+      color: #666;
+      font-size: 0.85rem;
+      cursor: pointer;
+      border-radius: 6px;
+      transition: all 0.2s;
+    }
+    .period-tab:hover { color: #fff; }
+    .period-tab.active {
+      background: #fff;
+      color: #000;
+    }
+    .chart-card {
+      background: rgba(255,255,255,0.02);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 16px;
+      padding: 1.5rem;
+    }
+    .chart-area {
+      height: 280px;
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 1rem 0;
+      border-bottom: 1px solid rgba(255,255,255,0.1);
+    }
+    .chart-column {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+      max-width: 60px;
+    }
+    .chart-bars-group {
+      display: flex;
+      gap: 4px;
+      align-items: flex-end;
+      height: 200px;
+    }
+    .chart-bar {
+      width: 20px;
+      border-radius: 4px 4px 0 0;
+      min-height: 4px;
+      transition: all 0.3s ease;
+      cursor: pointer;
+      position: relative;
+    }
+    .chart-bar.views {
+      background: linear-gradient(180deg, #00d4ff, #0099cc);
+    }
+    .chart-bar.visitors {
+      background: linear-gradient(180deg, #ff2d7b, #cc2266);
+    }
+    .chart-bar:hover {
+      filter: brightness(1.2);
+    }
+    .chart-bar:hover::after {
+      content: attr(data-value);
+      position: absolute;
+      bottom: calc(100% + 8px);
+      left: 50%;
+      transform: translateX(-50%);
+      background: #fff;
+      color: #000;
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 0.75rem;
+      white-space: nowrap;
+      z-index: 10;
+    }
+    .chart-label {
+      font-size: 0.7rem;
+      color: #555;
+      text-align: center;
+    }
+    .chart-legend {
+      display: flex;
+      justify-content: center;
+      gap: 2rem;
+      margin-top: 1.5rem;
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 0.85rem;
+      color: #888;
+    }
+    .legend-dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 3px;
+    }
+    .legend-dot.views { background: linear-gradient(180deg, #00d4ff, #0099cc); }
+    .legend-dot.visitors { background: linear-gradient(180deg, #ff2d7b, #cc2266); }
+    .ai-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 1rem;
+    }
+    .ai-card {
+      background: rgba(255,255,255,0.02);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 12px;
+      padding: 1.25rem;
+    }
+    .ai-card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 1rem;
+    }
+    .ai-provider {
+      font-size: 0.9rem;
+      font-weight: 600;
+    }
+    .ai-tier {
+      font-size: 0.75rem;
+      padding: 0.25rem 0.5rem;
+      border-radius: 4px;
+      background: rgba(123,45,255,0.2);
+      color: #a855f7;
+    }
+    .ai-stats {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1rem;
+      text-align: center;
+    }
+    .ai-stat-value {
+      font-size: 1.25rem;
+      font-weight: 700;
+      color: #fff;
+    }
+    .ai-stat-label {
+      font-size: 0.7rem;
+      color: #666;
+      text-transform: uppercase;
+    }
+    .empty-state {
+      text-align: center;
+      padding: 3rem 2rem;
+      color: #666;
+    }
+    .empty-state h3 {
+      color: #888;
+      margin-bottom: 0.5rem;
+    }
+    .loading {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 200px;
+      color: #666;
+    }
+    .spinner {
+      width: 40px;
+      height: 40px;
+      border: 3px solid rgba(255,255,255,0.1);
+      border-top-color: #00d4ff;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    .error-message {
+      background: rgba(255,68,68,0.1);
+      border: 1px solid rgba(255,68,68,0.3);
+      color: #ff4444;
+      padding: 1rem;
+      border-radius: 8px;
+      text-align: center;
+    }
+    .visit-link {
+      color: #00d4ff;
+      text-decoration: none;
+    }
+    .visit-link:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <header class="header">
+    <div class="header-left">
+      <a href="/" class="logo">It's Alive!</a>
+      <a href="/" class="back-link">← Back to Dashboard</a>
+    </div>
+  </header>
+
+  <div class="container">
+    <div class="page-header">
+      <h1 class="page-title">
+        ${subdomain}
+        <span class="app-badge">${subdomain}.itsalive.co</span>
+      </h1>
+      <p class="page-subtitle">Analytics and usage statistics • <a href="https://${subdomain}.itsalive.co" target="_blank" class="visit-link">Visit app →</a></p>
+    </div>
+
+    <div id="loading" class="loading">
+      <div class="spinner"></div>
+    </div>
+
+    <div id="content" style="display:none;">
+      <div id="summary-stats" class="stats-grid"></div>
+
+      <div class="section">
+        <div class="section-header">
+          <h2 class="section-title">Traffic <span style="font-size:0.75rem;font-weight:400;color:#666;margin-left:0.5rem;">delayed ~5 min</span></h2>
+          <div class="period-tabs">
+            <button class="period-tab" data-period="hour">Hourly</button>
+            <button class="period-tab active" data-period="day">Daily</button>
+            <button class="period-tab" data-period="week">Weekly</button>
+            <button class="period-tab" data-period="month">Monthly</button>
+          </div>
+        </div>
+        <div class="chart-card">
+          <div id="traffic-chart" class="chart-area"></div>
+          <div class="chart-legend">
+            <div class="legend-item"><div class="legend-dot views"></div> Page Views</div>
+            <div class="legend-item"><div class="legend-dot visitors"></div> Unique Visitors</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-header">
+          <h2 class="section-title">AI Usage This Month</h2>
+        </div>
+        <div id="ai-usage" class="ai-grid"></div>
+      </div>
+    </div>
+
+    <div id="error" style="display:none;"></div>
+  </div>
+
+  <script>
+    const API = 'https://api.itsalive.co';
+    const subdomain = '${subdomain}';
+    let currentPeriod = 'day';
+
+    async function init() {
+      try {
+        const [summaryRes, trafficRes, aiRes] = await Promise.all([
+          fetch(API + '/stats/summary?subdomain=' + subdomain, { credentials: 'include' }),
+          fetch(API + '/stats/traffic?subdomain=' + subdomain + '&period=' + currentPeriod, { credentials: 'include' }),
+          fetch(API + '/stats/ai?subdomain=' + subdomain + '&period=month', { credentials: 'include' })
+        ]);
+
+        const summary = await summaryRes.json();
+        const traffic = await trafficRes.json();
+        const ai = await aiRes.json();
+
+        document.getElementById('loading').style.display = 'none';
+
+        if (summary.error) {
+          showError(summary.error);
+          return;
+        }
+
+        document.getElementById('content').style.display = 'block';
+        renderSummary(summary);
+        renderTrafficChart(traffic);
+        renderAIUsage(ai);
+      } catch (e) {
+        showError('Failed to load stats: ' + e.message);
+      }
+    }
+
+    function showError(message) {
+      document.getElementById('loading').style.display = 'none';
+      document.getElementById('error').style.display = 'block';
+      document.getElementById('error').innerHTML = '<div class="error-message">' + message + '</div>';
+    }
+
+    function fmt(n) {
+      if (n >= 1000000) return (n/1000000).toFixed(1) + 'M';
+      if (n >= 1000) return (n/1000).toFixed(1) + 'K';
+      return (n || 0).toString();
+    }
+
+    function renderSummary(data) {
+      const container = document.getElementById('summary-stats');
+      container.innerHTML = \`
+        <div class="stat-card highlight">
+          <div class="stat-value">\${fmt(data.users?.dau)}</div>
+          <div class="stat-label">Daily Active Users</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value">\${fmt(data.users?.wau)}</div>
+          <div class="stat-label">Weekly Active Users</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value">\${fmt(data.users?.mau)}</div>
+          <div class="stat-label">Monthly Active Users</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value">\${fmt(data.users?.total)}</div>
+          <div class="stat-label">Total Users</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value">\${fmt(data.users?.signups_this_week)}</div>
+          <div class="stat-label">Signups This Week</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value">\${fmt(data.content?.documents)}</div>
+          <div class="stat-label">Documents</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value">\${fmt(data.traffic?.page_views?.today)}</div>
+          <div class="stat-label">Views Today</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value">\${fmt(data.traffic?.unique_visitors?.today)}</div>
+          <div class="stat-label">Visitors Today</div>
+        </div>
+      \`;
+    }
+
+    function renderTrafficChart(data) {
+      const container = document.getElementById('traffic-chart');
+      const trafficData = data.data || [];
+
+      if (trafficData.length === 0) {
+        container.innerHTML = '<div class="empty-state"><h3>No traffic data yet</h3><p>Traffic will appear here once visitors start using your app.</p></div>';
+        return;
+      }
+
+      const maxViews = Math.max(...trafficData.map(d => d.page_views || 0), 1);
+      const maxVisitors = Math.max(...trafficData.map(d => d.unique_visitors || 0), 1);
+      const chartMax = Math.max(maxViews, maxVisitors);
+      const displayData = trafficData.slice(-14);
+
+      container.innerHTML = displayData.map(d => {
+        const viewsHeight = chartMax > 0 ? ((d.page_views || 0) / chartMax) * 180 : 0;
+        const visitorsHeight = chartMax > 0 ? ((d.unique_visitors || 0) / chartMax) * 180 : 0;
+        const label = formatLabel(d.period);
+        return \`
+          <div class="chart-column">
+            <div class="chart-bars-group">
+              <div class="chart-bar views" style="height:\${viewsHeight}px" data-value="\${d.page_views || 0} views"></div>
+              <div class="chart-bar visitors" style="height:\${visitorsHeight}px" data-value="\${d.unique_visitors || 0} visitors"></div>
+            </div>
+            <div class="chart-label">\${label}</div>
+          </div>
+        \`;
+      }).join('');
+    }
+
+    function formatLabel(period) {
+      if (!period) return '';
+      if (currentPeriod === 'hour') {
+        const match = period.match(/(\\d{2})$/);
+        return match ? match[1] + ':00' : period;
+      }
+      if (currentPeriod === 'day') {
+        const d = new Date(period);
+        return (d.getMonth()+1) + '/' + d.getDate();
+      }
+      if (currentPeriod === 'week') {
+        return 'W' + (period.split('-W')[1] || period);
+      }
+      if (currentPeriod === 'month') {
+        const parts = period.split('-');
+        return parts.length > 1 ? parts[1] + '/' + parts[0].slice(2) : period;
+      }
+      return period;
+    }
+
+    function renderAIUsage(data) {
+      const container = document.getElementById('ai-usage');
+      const aiData = data.data || [];
+
+      if (aiData.length === 0) {
+        container.innerHTML = '<div class="empty-state" style="grid-column:1/-1;"><h3>No AI usage this month</h3><p>AI credits and usage will appear here when your app uses the AI features.</p></div>';
+        return;
+      }
+
+      container.innerHTML = aiData.map(d => \`
+        <div class="ai-card">
+          <div class="ai-card-header">
+            <span class="ai-provider">\${d.provider}</span>
+            <span class="ai-tier">\${d.tier}</span>
+          </div>
+          <div class="ai-stats">
+            <div>
+              <div class="ai-stat-value">\${fmt(d.requests)}</div>
+              <div class="ai-stat-label">Requests</div>
+            </div>
+            <div>
+              <div class="ai-stat-value">\${fmt(d.total_tokens)}</div>
+              <div class="ai-stat-label">Tokens</div>
+            </div>
+            <div>
+              <div class="ai-stat-value">\${fmt(d.total_credits)}</div>
+              <div class="ai-stat-label">Credits</div>
+            </div>
+          </div>
+        </div>
+      \`).join('');
+    }
+
+    // Period tab switching
+    document.querySelectorAll('.period-tab').forEach(tab => {
+      tab.addEventListener('click', async () => {
+        document.querySelectorAll('.period-tab').forEach(t => t.classList.remove('active'));
+        tab.classList.add('active');
+        currentPeriod = tab.dataset.period;
+
+        document.getElementById('traffic-chart').innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+
+        const trafficRes = await fetch(API + '/stats/traffic?subdomain=' + subdomain + '&period=' + currentPeriod, { credentials: 'include' });
+        const traffic = await trafficRes.json();
+        renderTrafficChart(traffic);
+      });
+    });
 
     init();
   </script>
@@ -2922,4 +4065,107 @@ function landingPage() {
   </footer>
 </body>
 </html>`;
+}
+
+// ============ OG Tag Injection Helpers ============
+
+// Match URL against configured patterns
+async function getOGDataForPath(env, subdomain, pathname) {
+  const routes = await env.DB.prepare(
+    'SELECT * FROM og_routes WHERE app_subdomain = ?'
+  ).bind(subdomain).all();
+
+  for (const route of routes.results) {
+    const params = matchPattern(route.pattern, pathname);
+    if (params) {
+      const docId = params[route.id_param || 'id'];
+      if (!docId) continue;
+
+      const doc = await env.DB.prepare(
+        'SELECT data FROM app_data WHERE app_subdomain = ? AND collection = ? AND doc_id = ?'
+      ).bind(subdomain, route.collection, docId).first();
+
+      if (doc) {
+        try {
+          const data = JSON.parse(doc.data);
+          return {
+            title: route.title_field ? data[route.title_field] : null,
+            description: route.description_field ? data[route.description_field] : null,
+            image: route.image_field ? data[route.image_field] : null,
+          };
+        } catch (e) {
+          // Invalid JSON in document
+          continue;
+        }
+      }
+    }
+  }
+  return null;
+}
+
+// Pattern matching: /recipe/:id matches /recipe/abc123
+function matchPattern(pattern, pathname) {
+  const patternParts = pattern.split('/').filter(Boolean);
+  const pathParts = pathname.split('/').filter(Boolean);
+
+  if (patternParts.length !== pathParts.length) return null;
+
+  const params = {};
+  for (let i = 0; i < patternParts.length; i++) {
+    if (patternParts[i].startsWith(':')) {
+      params[patternParts[i].slice(1)] = pathParts[i];
+    } else if (patternParts[i] !== pathParts[i]) {
+      return null;
+    }
+  }
+  return params;
+}
+
+// Escape HTML entities for safe attribute values
+function escapeHtml(str) {
+  if (!str) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+// Inject OG tags into HTML
+function injectOGTags(html, ogData, subdomain) {
+  const tags = [];
+
+  if (ogData.title) {
+    tags.push(`<meta property="og:title" content="${escapeHtml(ogData.title)}">`);
+    tags.push(`<meta name="twitter:title" content="${escapeHtml(ogData.title)}">`);
+    // Replace existing title tag or add new one
+    if (html.includes('<title>')) {
+      html = html.replace(/<title>[^<]*<\/title>/i, `<title>${escapeHtml(ogData.title)}</title>`);
+    } else {
+      tags.push(`<title>${escapeHtml(ogData.title)}</title>`);
+    }
+  }
+
+  if (ogData.description) {
+    tags.push(`<meta property="og:description" content="${escapeHtml(ogData.description)}">`);
+    tags.push(`<meta name="twitter:description" content="${escapeHtml(ogData.description)}">`);
+    tags.push(`<meta name="description" content="${escapeHtml(ogData.description)}">`);
+  }
+
+  if (ogData.image) {
+    tags.push(`<meta property="og:image" content="${escapeHtml(ogData.image)}">`);
+    tags.push(`<meta name="twitter:image" content="${escapeHtml(ogData.image)}">`);
+    tags.push(`<meta name="twitter:card" content="summary_large_image">`);
+  }
+
+  // Add og:type and og:url
+  tags.push(`<meta property="og:type" content="website">`);
+
+  if (tags.length > 0) {
+    // Insert after <head>
+    return html.replace(/<head>/i, `<head>\n    <!-- Dynamic OG tags -->\n    ${tags.join('\n    ')}`);
+  }
+
+  return html;
 }
