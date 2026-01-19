@@ -599,4 +599,8 @@ footer a {
 footer a:hover {
   color: #00d4ff;
 }
+footer .copyright {
+  margin-top: 1rem;
+  font-size: 0.85rem;
+}
 
