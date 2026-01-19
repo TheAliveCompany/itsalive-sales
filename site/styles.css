@@ -303,6 +303,52 @@ h1 {
   color: #fff;
 }
 
+/* Credits info */
+.credits-info {
+  max-width: 600px;
+  margin: 4rem auto 0;
+  text-align: center;
+  padding: 2rem;
+  background: rgba(255,255,255,0.02);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 16px;
+}
+.credits-info h3 {
+  font-size: 1.4rem;
+  margin-bottom: 0.75rem;
+  color: #fff;
+}
+.credits-info > p {
+  color: #888;
+  margin-bottom: 1.5rem;
+}
+.credits-table {
+  text-align: left;
+  margin: 0 auto 1.5rem;
+  max-width: 400px;
+}
+.credit-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 0.6rem 0;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+  color: #aaa;
+  font-size: 0.95rem;
+}
+.credit-row:last-child {
+  border-bottom: none;
+}
+.credit-row span:last-child {
+  color: #00d4ff;
+  font-weight: 500;
+  font-family: 'SF Mono', Monaco, monospace;
+}
+.credits-note {
+  color: #666;
+  font-size: 0.9rem;
+  margin-top: 1rem;
+}
+
 /* Nav */
 nav {
   position: fixed;
