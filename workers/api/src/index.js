@@ -2,27 +2,31 @@ import { AutoRouter } from 'itty-router';
 
 // Custom CORS middleware that supports async custom domain lookup
 async function handleCors(request, env) {
-  // Check for proxied requests from serve worker
-  const forwardedHost = request.headers.get('X-Forwarded-Host');
-  if (forwardedHost) {
-    // Check if it's an itsalive.co subdomain
-    if (forwardedHost.endsWith('.itsalive.co')) {
-      const match = forwardedHost.match(/^([^.]+)\.itsalive\.co$/);
-      if (match) {
-        request.subdomainFromProxy = match[1];
-        request.allowedOrigin = `https://${forwardedHost}`;
+  try {
+    // Check for proxied requests from serve worker
+    const forwardedHost = request.headers.get('X-Forwarded-Host');
+    if (forwardedHost) {
+      // Check if it's an itsalive.co subdomain
+      if (forwardedHost.endsWith('.itsalive.co')) {
+        const match = forwardedHost.match(/^([^.]+)\.itsalive\.co$/);
+        if (match) {
+          request.subdomainFromProxy = match[1];
+          request.allowedOrigin = `https://${forwardedHost}`;
+        }
+      } else if (forwardedHost) {
+        // Custom domain - look up subdomain in DB
+        const app = await env.DB.prepare(
+          'SELECT subdomain FROM apps WHERE custom_domain = ?'
+        ).bind(forwardedHost).first();
+        if (app) {
+          request.subdomainFromProxy = app.subdomain;
+          request.allowedOrigin = `https://${forwardedHost}`;
+        }
       }
-    } else {
-      // Custom domain - look up subdomain in DB
-      const app = await env.DB.prepare(
-        'SELECT subdomain FROM apps WHERE custom_domain = ?'
-      ).bind(forwardedHost).first();
-      if (app) {
-        request.subdomainFromProxy = app.subdomain;
-        request.allowedOrigin = `https://${forwardedHost}`;
-      }
+      return;
     }
-    return;
+  } catch (e) {
+    console.error('handleCors error (forwardedHost):', e.message);
   }
 
   const origin = request.headers.get('origin');
@@ -100,6 +104,18 @@ function preflight(request) {
 const router = AutoRouter({
   before: [handleCors, preflight],
   finally: [corsify],
+  catch: (err, request) => {
+    console.error('Router error:', err.message, err.stack);
+    console.error('Request URL:', request.url);
+    return new Response(JSON.stringify({
+      error: err.message,
+      type: err.name,
+      url: request.url,
+    }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  },
 });
 
 // Helper to generate random IDs
@@ -543,7 +559,19 @@ async function getOwnerSession(request, env) {
   const data = await env.EMAIL_TOKENS.get(`owner_session:${token}`);
   if (!data) return null;
 
-  return JSON.parse(data);
+  const parsed = JSON.parse(data);
+
+  // Ensure owner_id exists (handle old session format)
+  if (!parsed.owner_id && parsed.id) {
+    parsed.owner_id = parsed.id;
+  }
+
+  if (!parsed.owner_id || !parsed.email) {
+    console.error('Invalid session data - missing owner_id or email:', JSON.stringify(parsed));
+    return null;
+  }
+
+  return parsed;
 }
 
 // POST /owner/login - Send magic link for dashboard access
@@ -651,11 +679,15 @@ router.get('/owner/verify', async (request, env) => {
 
 // GET /owner/me - Check if owner is logged in
 router.get('/owner/me', async (request, env) => {
-  const owner = await getOwnerSession(request, env);
-  if (!owner) {
-    return new Response(JSON.stringify({ error: 'Not logged in' }), { status: 401 });
+  try {
+    const owner = await getOwnerSession(request, env);
+    if (!owner) {
+      return new Response(JSON.stringify({ error: 'Not logged in' }), { status: 401 });
+    }
+    return new Response(JSON.stringify({ email: owner.email, owner_id: owner.owner_id }));
+  } catch (e) {
+    return new Response(JSON.stringify({ error: '/owner/me error: ' + e.message }), { status: 500 });
   }
-  return new Response(JSON.stringify({ email: owner.email, owner_id: owner.owner_id }));
 });
 
 // POST /owner/logout - Clear owner session
@@ -676,7 +708,7 @@ router.post('/owner/logout', async (request, env) => {
 // GET /owner/apps - List all apps owned by the logged-in owner
 router.get('/owner/apps', async (request, env) => {
   const owner = await getOwnerSession(request, env);
-  if (!owner) {
+  if (!owner || !owner.owner_id) {
     return new Response(JSON.stringify({ error: 'Not logged in' }), { status: 401 });
   }
 
@@ -1246,6 +1278,13 @@ const PLAN_CREDITS = {
 
 // Helper to create or get Stripe customer for an owner
 async function getOrCreateStripeCustomer(env, ownerId, email) {
+  if (!ownerId) {
+    throw new Error('getOrCreateStripeCustomer: ownerId is required');
+  }
+  if (!email) {
+    throw new Error('getOrCreateStripeCustomer: email is required');
+  }
+
   // Check if we have a Stripe customer for this owner
   const existing = await env.DB.prepare(
     'SELECT stripe_customer_id FROM stripe_customers WHERE owner_id = ?'
@@ -1330,23 +1369,36 @@ async function checkAutoRefill(env, ownerId) {
 
   if (!customer || !customer.default_payment_method) return null;
 
+  // Get owner email for receipt
+  const owner = await env.DB.prepare(
+    'SELECT email FROM owners WHERE id = ?'
+  ).bind(ownerId).first();
+
   // Create a payment intent and charge immediately
+  const params = new URLSearchParams({
+    amount: settings.refill_price.toString(),  // in cents
+    currency: 'usd',
+    customer: customer.stripe_customer_id,
+    payment_method: customer.default_payment_method,
+    off_session: 'true',
+    confirm: 'true',
+    'metadata[owner_id]': ownerId,
+    'metadata[type]': 'auto_refill',
+    description: `itsalive.co credit refill - ${settings.refill_amount.toLocaleString()} credits`,
+  });
+
+  // Add receipt email if we have it
+  if (owner?.email) {
+    params.append('receipt_email', owner.email);
+  }
+
   const paymentResponse = await fetch('https://api.stripe.com/v1/payment_intents', {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${env.STRIPE_SECRET_KEY}`,
       'Content-Type': 'application/x-www-form-urlencoded',
     },
-    body: new URLSearchParams({
-      amount: settings.refill_price.toString(),  // in cents
-      currency: 'usd',
-      customer: customer.stripe_customer_id,
-      payment_method: customer.default_payment_method,
-      off_session: 'true',
-      confirm: 'true',
-      'metadata[owner_id]': ownerId,
-      'metadata[type]': 'auto_refill',
-    }),
+    body: params,
   });
 
   const payment = await paymentResponse.json();
@@ -1433,6 +1485,367 @@ router.post('/billing/checkout', async (request, env) => {
   return { checkout_url: session.url };
 });
 
+// POST /billing/setup-intent - Create a SetupIntent for collecting payment method
+router.post('/billing/setup-intent', async (request, env) => {
+  const owner = await getOwnerSession(request, env);
+  if (!owner) {
+    return new Response(JSON.stringify({ error: 'Not logged in' }), { status: 401 });
+  }
+
+  if (!owner.owner_id || !owner.email) {
+    return new Response(JSON.stringify({ error: 'Invalid session: missing owner_id or email' }), { status: 401 });
+  }
+
+  const body = await request.json();
+  const { plan, site } = body;
+
+  if (!plan || !['pro_monthly', 'pro_annual'].includes(plan)) {
+    return new Response(JSON.stringify({ error: 'Invalid plan. Choose pro_monthly or pro_annual' }), { status: 400 });
+  }
+
+  if (!site || typeof site !== 'string') {
+    return new Response(JSON.stringify({ error: 'site is required' }), { status: 400 });
+  }
+
+  // Verify the site belongs to this owner
+  let app;
+  try {
+    app = await env.DB.prepare(
+      'SELECT subdomain FROM apps WHERE subdomain = ? AND owner_id = ?'
+    ).bind(site, owner.owner_id).first();
+  } catch (e) {
+    return new Response(JSON.stringify({ error: 'DB error (app lookup): ' + e.message, site, owner_id: owner.owner_id }), { status: 500 });
+  }
+
+  if (!app) {
+    return new Response(JSON.stringify({ error: 'Site not found or not owned by you' }), { status: 404 });
+  }
+
+  // Get or create Stripe customer
+  let stripeCustomerId;
+  try {
+    stripeCustomerId = await getOrCreateStripeCustomer(env, owner.owner_id, owner.email);
+  } catch (e) {
+    return new Response(JSON.stringify({ error: 'DB error (stripe customer): ' + e.message }), { status: 500 });
+  }
+
+  // Check for existing active subscription for this site
+  let existing;
+  try {
+    existing = await env.DB.prepare(
+      'SELECT * FROM subscriptions WHERE app_subdomain = ? AND status = \'active\''
+    ).bind(site).first();
+  } catch (e) {
+    return new Response(JSON.stringify({ error: 'DB error (subscription check): ' + e.message }), { status: 500 });
+  }
+
+  if (existing) {
+    return new Response(JSON.stringify({
+      error: 'This site already has an active subscription',
+      current_plan: existing.plan,
+    }), { status: 400 });
+  }
+
+  // Create SetupIntent with automatic payment methods
+  const params = new URLSearchParams();
+  params.append('customer', stripeCustomerId);
+  params.append('automatic_payment_methods[enabled]', 'true');
+  params.append('automatic_payment_methods[allow_redirects]', 'never');
+  params.append('usage', 'off_session');
+  params.append('metadata[owner_id]', owner.owner_id);
+  params.append('metadata[plan]', plan);
+  params.append('metadata[site]', site);
+
+  const response = await fetch('https://api.stripe.com/v1/setup_intents', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${env.STRIPE_SECRET_KEY}`,
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body: params,
+  });
+
+  const setupIntent = await response.json();
+  if (setupIntent.error) {
+    console.error('Stripe SetupIntent error:', setupIntent.error);
+    return new Response(JSON.stringify({ error: setupIntent.error.message }), { status: 400 });
+  }
+
+  return {
+    client_secret: setupIntent.client_secret,
+    setup_intent_id: setupIntent.id,
+  };
+});
+
+// POST /billing/create-subscription - Create subscription after payment method is set up
+router.post('/billing/create-subscription', async (request, env) => {
+  const owner = await getOwnerSession(request, env);
+  if (!owner) {
+    return new Response(JSON.stringify({ error: 'Not logged in' }), { status: 401 });
+  }
+
+  if (!owner.owner_id) {
+    return new Response(JSON.stringify({ error: 'Invalid session: missing owner_id' }), { status: 401 });
+  }
+
+  const body = await request.json();
+  const { plan, setup_intent_id, site } = body;
+
+  if (!plan || !['pro_monthly', 'pro_annual'].includes(plan)) {
+    return new Response(JSON.stringify({ error: 'Invalid plan' }), { status: 400 });
+  }
+
+  if (!setup_intent_id) {
+    return new Response(JSON.stringify({ error: 'setup_intent_id required' }), { status: 400 });
+  }
+
+  if (!site || typeof site !== 'string') {
+    return new Response(JSON.stringify({ error: 'site is required' }), { status: 400 });
+  }
+
+  // Verify the site belongs to this owner
+  let app;
+  try {
+    app = await env.DB.prepare(
+      'SELECT subdomain FROM apps WHERE subdomain = ? AND owner_id = ?'
+    ).bind(site, owner.owner_id).first();
+  } catch (e) {
+    console.error('create-subscription: app lookup failed', { site, owner_id: owner.owner_id, error: e.message });
+    return new Response(JSON.stringify({ error: 'DB error (app lookup): ' + e.message }), { status: 500 });
+  }
+
+  if (!app) {
+    return new Response(JSON.stringify({ error: 'Site not found or not owned by you' }), { status: 404 });
+  }
+
+  // Verify the SetupIntent succeeded
+  const siResponse = await fetch(`https://api.stripe.com/v1/setup_intents/${setup_intent_id}`, {
+    headers: { 'Authorization': `Bearer ${env.STRIPE_SECRET_KEY}` },
+  });
+  const setupIntent = await siResponse.json();
+
+  if (setupIntent.error) {
+    console.error('SetupIntent error:', setupIntent.error);
+    return new Response(JSON.stringify({ error: 'SetupIntent error: ' + setupIntent.error.message }), { status: 400 });
+  }
+
+  if (setupIntent.status !== 'succeeded') {
+    return new Response(JSON.stringify({ error: 'Payment method not confirmed. Status: ' + setupIntent.status }), { status: 400 });
+  }
+
+  const stripeCustomerId = setupIntent.customer;
+  const paymentMethodId = setupIntent.payment_method;
+
+  if (!stripeCustomerId || !paymentMethodId) {
+    return new Response(JSON.stringify({
+      error: 'Invalid SetupIntent: missing customer or payment_method',
+      customerId: stripeCustomerId || 'missing',
+      paymentMethodId: paymentMethodId || 'missing'
+    }), { status: 400 });
+  }
+
+  // Set as default payment method
+  await fetch(`https://api.stripe.com/v1/customers/${stripeCustomerId}`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${env.STRIPE_SECRET_KEY}`,
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body: new URLSearchParams({
+      'invoice_settings[default_payment_method]': paymentMethodId,
+    }),
+  });
+
+  // Create the subscription
+  const subParams = new URLSearchParams();
+  subParams.append('customer', stripeCustomerId);
+  subParams.append('items[0][price]', STRIPE_PRICES[plan]);
+  subParams.append('default_payment_method', paymentMethodId);
+  subParams.append('metadata[owner_id]', owner.owner_id);
+  subParams.append('metadata[plan]', plan);
+  subParams.append('metadata[site]', site);
+
+  const subResponse = await fetch('https://api.stripe.com/v1/subscriptions', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${env.STRIPE_SECRET_KEY}`,
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body: subParams,
+  });
+
+  const subscription = await subResponse.json();
+  if (subscription.error) {
+    return new Response(JSON.stringify({ error: 'Stripe subscription error: ' + subscription.error.message }), { status: 400 });
+  }
+
+  // Validate subscription data before inserting
+  if (!subscription.id || !subscription.status) {
+    console.error('Invalid subscription response:', JSON.stringify(subscription));
+    return new Response(JSON.stringify({ error: 'Invalid subscription response from Stripe' }), { status: 500 });
+  }
+
+  // Record in our database
+  try {
+    await env.DB.prepare(`
+      INSERT INTO subscriptions (id, owner_id, app_subdomain, stripe_subscription_id, plan, status, current_period_start, current_period_end)
+      VALUES (?, ?, ?, ?, ?, ?, datetime(?, 'unixepoch'), datetime(?, 'unixepoch'))
+    `).bind(
+      generateId(),
+      owner.owner_id,
+      site,
+      subscription.id,
+      plan,
+      subscription.status,
+      subscription.current_period_start || Math.floor(Date.now() / 1000),
+      subscription.current_period_end || Math.floor(Date.now() / 1000) + 86400 * 30
+    ).run();
+  } catch (e) {
+    console.error('create-subscription: insert subscription failed', { error: e.message });
+    return new Response(JSON.stringify({ error: 'DB error (insert subscription): ' + e.message }), { status: 500 });
+  }
+
+  // Grant credits
+  const credits = PLAN_CREDITS[plan] || 1500;
+  try {
+    await addCreditsWithTransaction(
+      env,
+      owner.owner_id,
+      credits,
+      'subscription',
+      null,
+      `${plan === 'pro_annual' ? 'Pro Annual' : 'Pro Monthly'} subscription - ${credits.toLocaleString()} credits`
+    );
+  } catch (e) {
+    console.error('create-subscription: addCreditsWithTransaction failed', { error: e.message });
+    return new Response(JSON.stringify({ error: 'DB error (add credits): ' + e.message }), { status: 500 });
+  }
+
+  // Save payment method and enable auto-refill
+  try {
+    await env.DB.prepare(
+      'UPDATE stripe_customers SET default_payment_method = ? WHERE owner_id = ?'
+    ).bind(paymentMethodId, owner.owner_id).run();
+  } catch (e) {
+    console.error('create-subscription: update payment method failed', { error: e.message });
+    // Non-fatal, continue
+  }
+
+  try {
+    await env.DB.prepare(`
+      INSERT INTO auto_refill_settings (owner_id, enabled, threshold, refill_amount, refill_price)
+      VALUES (?, 1, 10000, 50000, 5000)
+      ON CONFLICT(owner_id) DO UPDATE SET enabled = 1
+    `).bind(owner.owner_id).run();
+  } catch (e) {
+    console.error('create-subscription: auto_refill_settings failed', { error: e.message });
+    // Non-fatal, continue
+  }
+
+  return {
+    success: true,
+    subscription_id: subscription.id,
+    credits_added: credits,
+  };
+});
+
+// POST /billing/confirm-subscription - Confirm subscription after payment succeeds
+router.post('/billing/confirm-subscription', async (request, env) => {
+  const owner = await getOwnerSession(request, env);
+  if (!owner) {
+    return new Response(JSON.stringify({ error: 'Not logged in' }), { status: 401 });
+  }
+
+  const { subscription_id } = await request.json();
+
+  if (!subscription_id) {
+    return new Response(JSON.stringify({ error: 'subscription_id required' }), { status: 400 });
+  }
+
+  // Fetch the subscription from Stripe
+  const response = await fetch(`https://api.stripe.com/v1/subscriptions/${subscription_id}`, {
+    headers: { 'Authorization': `Bearer ${env.STRIPE_SECRET_KEY}` },
+  });
+
+  const subscription = await response.json();
+  if (subscription.error) {
+    return new Response(JSON.stringify({ error: subscription.error.message }), { status: 400 });
+  }
+
+  if (subscription.status !== 'active') {
+    return new Response(JSON.stringify({ error: 'Subscription not active', status: subscription.status }), { status: 400 });
+  }
+
+  const ownerId = subscription.metadata?.owner_id;
+  const plan = subscription.metadata?.plan;
+  const site = subscription.metadata?.site;
+
+  if (ownerId !== owner.owner_id) {
+    return new Response(JSON.stringify({ error: 'Subscription does not belong to you' }), { status: 403 });
+  }
+
+  if (!site) {
+    return new Response(JSON.stringify({ error: 'Subscription missing site metadata' }), { status: 400 });
+  }
+
+  // Check if already recorded
+  const existingSub = await env.DB.prepare(
+    'SELECT id FROM subscriptions WHERE stripe_subscription_id = ?'
+  ).bind(subscription.id).first();
+
+  if (existingSub) {
+    return { success: true, already_recorded: true };
+  }
+
+  // Create subscription record
+  await env.DB.prepare(`
+    INSERT INTO subscriptions (id, owner_id, app_subdomain, stripe_subscription_id, plan, status, current_period_start, current_period_end)
+    VALUES (?, ?, ?, ?, ?, ?, datetime(?, 'unixepoch'), datetime(?, 'unixepoch'))
+  `).bind(
+    generateId(),
+    ownerId,
+    site,
+    subscription.id,
+    plan,
+    subscription.status,
+    subscription.current_period_start,
+    subscription.current_period_end
+  ).run();
+
+  // Grant initial credits
+  const credits = PLAN_CREDITS[plan] || 1500;
+  await addCreditsWithTransaction(
+    env,
+    ownerId,
+    credits,
+    'subscription',
+    null,
+    `${plan === 'pro_annual' ? 'Pro Annual' : 'Pro Monthly'} subscription - ${credits.toLocaleString()} credits`
+  );
+
+  // Save payment method and enable auto-refill
+  if (subscription.default_payment_method) {
+    await env.DB.prepare(
+      'UPDATE stripe_customers SET default_payment_method = ? WHERE owner_id = ?'
+    ).bind(subscription.default_payment_method, ownerId).run();
+
+    await env.DB.prepare(`
+      INSERT INTO auto_refill_settings (owner_id, enabled, threshold, refill_amount, refill_price)
+      VALUES (?, 1, 10000, 50000, 5000)
+      ON CONFLICT(owner_id) DO UPDATE SET enabled = 1
+    `).bind(ownerId).run();
+  }
+
+  return { success: true, credits_added: credits };
+});
+
+// GET /billing/config - Get Stripe publishable key for frontend
+router.get('/billing/config', async (request, env) => {
+  return {
+    publishable_key: env.STRIPE_PUBLISHABLE_KEY || 'pk_test_51Sr77xAE4eT6zpWA0rmY6zOLZBDsRyvjhtjQBoveuYGKSyeSsI7Sxi7RVF51usb4pVLEmg3UQfkDY3XdOAmJBNvf0037KXgOOd',
+  };
+});
+
 // POST /billing/portal - Get Stripe customer portal URL
 router.post('/billing/portal', async (request, env) => {
   const owner = await getOwnerSession(request, env);
@@ -1477,10 +1890,34 @@ router.get('/billing/info', async (request, env) => {
     return new Response(JSON.stringify({ error: 'Not logged in' }), { status: 401 });
   }
 
-  // Get subscription
-  const subscription = await env.DB.prepare(
-    'SELECT plan, status, current_period_end, cancel_at_period_end FROM subscriptions WHERE owner_id = ? AND status IN (\'active\', \'past_due\')'
-  ).bind(owner.owner_id).first();
+  if (!owner.owner_id) {
+    return new Response(JSON.stringify({ error: 'Invalid session: missing owner_id' }), { status: 401 });
+  }
+
+  // Get all subscriptions for this owner (keyed by site)
+  const subscriptionRows = await env.DB.prepare(
+    'SELECT app_subdomain, plan, status, current_period_end, cancel_at_period_end FROM subscriptions WHERE owner_id = ? AND status IN (\'active\', \'past_due\')'
+  ).bind(owner.owner_id).all();
+
+  // Build subscriptions object keyed by site subdomain
+  const subscriptions = {};
+  for (const sub of subscriptionRows.results || []) {
+    subscriptions[sub.app_subdomain] = {
+      plan: sub.plan,
+      status: sub.status,
+      current_period_end: sub.current_period_end,
+      cancel_at_period_end: !!sub.cancel_at_period_end,
+    };
+  }
+
+  // For backwards compatibility, also return first subscription as "subscription"
+  const firstSub = subscriptionRows.results?.[0];
+  const subscription = firstSub ? {
+    plan: firstSub.plan,
+    status: firstSub.status,
+    current_period_end: firstSub.current_period_end,
+    cancel_at_period_end: !!firstSub.cancel_at_period_end,
+  } : null;
 
   // Get credits
   const credits = await env.DB.prepare(
@@ -1507,12 +1944,8 @@ router.get('/billing/info', async (request, env) => {
   }
 
   return {
-    subscription: subscription ? {
-      plan: subscription.plan,
-      status: subscription.status,
-      current_period_end: subscription.current_period_end,
-      cancel_at_period_end: !!subscription.cancel_at_period_end,
-    } : null,
+    subscription, // First subscription (backwards compat)
+    subscriptions, // All subscriptions keyed by site subdomain
     credits: {
       balance: credits?.balance || 0,
       lifetime_purchased: credits?.lifetime_purchased || 0,
@@ -1657,15 +2090,17 @@ router.post('/billing/webhook', async (request, env) => {
 
           const ownerId = subscription.metadata?.owner_id;
           const plan = subscription.metadata?.plan;
+          const site = subscription.metadata?.site;
 
-          if (ownerId && plan) {
+          if (ownerId && plan && site) {
             // Create subscription record
             await env.DB.prepare(`
-              INSERT INTO subscriptions (id, owner_id, stripe_subscription_id, plan, status, current_period_start, current_period_end)
-              VALUES (?, ?, ?, ?, ?, datetime(?, 'unixepoch'), datetime(?, 'unixepoch'))
+              INSERT INTO subscriptions (id, owner_id, app_subdomain, stripe_subscription_id, plan, status, current_period_start, current_period_end)
+              VALUES (?, ?, ?, ?, ?, ?, datetime(?, 'unixepoch'), datetime(?, 'unixepoch'))
             `).bind(
               generateId(),
               ownerId,
+              site,
               subscription.id,
               plan,
               subscription.status,
@@ -7263,9 +7698,23 @@ router.all('*', () => new Response(errorPage({
 
 export default {
   async fetch(request, env, ctx) {
-    // Handle CORS first (async custom domain lookup)
-    await handleCors(request, env);
-    return router.fetch(request, env, ctx);
+    try {
+      // Handle CORS first (async custom domain lookup)
+      await handleCors(request, env);
+      return router.fetch(request, env, ctx);
+    } catch (e) {
+      console.error('Unhandled error:', e.message, e.stack);
+      console.error('Request URL:', request.url);
+      console.error('Request method:', request.method);
+      return new Response(JSON.stringify({
+        error: e.message,
+        type: e.name,
+        url: request.url
+      }), {
+        status: 500,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
   },
 
   // Scheduled handler for cron jobs and job queue processing

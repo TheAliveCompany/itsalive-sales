@@ -6,10 +6,24 @@ export default {
 
     // Dashboard subdomain
     if (host === 'dashboard.itsalive.co') {
+      // Apple Pay domain verification
+      if (url.pathname === '/.well-known/apple-developer-merchantid-domain-association') {
+        return fetch('https://stripe.com/files/apple-pay/apple-developer-merchantid-domain-association');
+      }
+
       // Stats page: /stats/appname
       const statsMatch = url.pathname.match(/^\/stats\/([a-z0-9-]+)$/i);
       if (statsMatch) {
         return new Response(statsPage(statsMatch[1]), {
+          headers: { 'content-type': 'text/html' },
+        });
+      }
+
+      // Checkout page: /checkout?plan=pro_monthly&site=mysite
+      if (url.pathname === '/checkout') {
+        const plan = url.searchParams.get('plan');
+        const site = url.searchParams.get('site');
+        return new Response(checkoutPage(plan, site), {
           headers: { 'content-type': 'text/html' },
         });
       }
@@ -816,6 +830,374 @@ function comingSoonPage(subdomain) {
 </html>`;
 }
 
+function checkoutPage(plan, site) {
+  const validPlan = ['pro_monthly', 'pro_annual'].includes(plan) ? plan : 'pro_annual';
+  const isAnnual = validPlan === 'pro_annual';
+  const planName = isAnnual ? 'Pro Annual' : 'Pro Monthly';
+  const price = isAnnual ? '$50/year' : '$5/month';
+  const credits = isAnnual ? '20,000' : '1,500';
+  const siteDisplay = site || 'your site';
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Checkout - itsalive.co</title>
+  <script src="https://js.stripe.com/v3/"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      background: #0a0a0b;
+      color: #fff;
+      min-height: 100vh;
+    }
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 1.5rem 2rem;
+      border-bottom: 1px solid #1a1a1a;
+      background: #0d0d0d;
+    }
+    .logo {
+      font-size: 1.5rem;
+      font-weight: 800;
+      background: linear-gradient(135deg, #00d4ff 0%, #7b2dff 50%, #ff2d7b 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      text-decoration: none;
+    }
+    .back-link {
+      color: #888;
+      text-decoration: none;
+      font-size: 0.9rem;
+    }
+    .back-link:hover { color: #fff; }
+    .container {
+      max-width: 500px;
+      margin: 0 auto;
+      padding: 3rem 1.5rem;
+    }
+    h1 {
+      font-size: 1.75rem;
+      margin-bottom: 0.5rem;
+    }
+    .subtitle {
+      color: #888;
+      margin-bottom: 2rem;
+    }
+    .plan-summary {
+      background: rgba(255,255,255,0.02);
+      border: 1px solid #222;
+      border-radius: 12px;
+      padding: 1.5rem;
+      margin-bottom: 2rem;
+    }
+    .plan-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1rem;
+    }
+    .plan-name {
+      font-weight: 700;
+      font-size: 1.1rem;
+    }
+    .plan-price {
+      font-size: 1.5rem;
+      font-weight: 800;
+      background: linear-gradient(135deg, #00d4ff, #7b2dff);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .plan-details {
+      color: #888;
+      font-size: 0.9rem;
+    }
+    .change-plan {
+      color: #00d4ff;
+      text-decoration: none;
+      font-size: 0.85rem;
+    }
+    .change-plan:hover { text-decoration: underline; }
+    .payment-section {
+      margin-bottom: 1.5rem;
+    }
+    .payment-section h2 {
+      font-size: 1rem;
+      color: #888;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-bottom: 1rem;
+    }
+    #payment-element {
+      background: #111;
+      border: 1px solid #333;
+      border-radius: 8px;
+      padding: 1rem;
+    }
+    .btn {
+      width: 100%;
+      padding: 1rem;
+      background: linear-gradient(135deg, #00d4ff, #7b2dff);
+      border: none;
+      border-radius: 8px;
+      color: #fff;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      margin-top: 1.5rem;
+      transition: opacity 0.2s;
+    }
+    .btn:hover { opacity: 0.9; }
+    .btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    .error-message {
+      background: rgba(255,68,68,0.1);
+      border: 1px solid rgba(255,68,68,0.3);
+      color: #ff6b6b;
+      padding: 1rem;
+      border-radius: 8px;
+      margin-top: 1rem;
+      display: none;
+    }
+    .loading {
+      text-align: center;
+      padding: 2rem;
+      color: #888;
+    }
+    .secure-note {
+      text-align: center;
+      color: #666;
+      font-size: 0.8rem;
+      margin-top: 1.5rem;
+    }
+  </style>
+</head>
+<body>
+  <header class="header">
+    <a href="/" class="logo">itsalive.co</a>
+    <a href="/" class="back-link">← Back to Dashboard</a>
+  </header>
+
+  <div class="container">
+    <h1>Upgrade ${site ? site + '.itsalive.co' : 'your site'}</h1>
+    <p class="subtitle">Credits are shared across all your sites</p>
+
+    <div class="plan-summary">
+      <div class="plan-header">
+        <span class="plan-name">${planName}</span>
+        <span class="plan-price">${price}</span>
+      </div>
+      <div class="plan-details">${credits} credits ${isAnnual ? 'per year' : 'per month'}</div>
+      <a href="/checkout?plan=${isAnnual ? 'pro_monthly' : 'pro_annual'}&site=${site || ''}" class="change-plan">${isAnnual ? '← Switch to Monthly ($5/mo)' : '← Switch to Annual ($50/yr - save 17%)'}</a>
+    </div>
+
+    <div class="payment-section">
+      <h2>Payment Details</h2>
+      <div id="payment-element">
+        <div class="loading">Loading payment form...</div>
+      </div>
+    </div>
+
+    <button id="submit-btn" class="btn" disabled>Subscribe</button>
+    <div id="error-message" class="error-message"></div>
+
+    <p class="secure-note">🔒 Secured by Stripe. Your card details are never stored on our servers.</p>
+  </div>
+
+  <script>
+    const API = 'https://api.itsalive.co';
+    const plan = '${validPlan}';
+    const site = '${site || ''}';
+    let stripe, elements, setupIntentId;
+
+    async function init() {
+      try {
+        // Check if logged in (owner session for dashboard)
+        const meRes = await fetch(API + '/owner/me', { credentials: 'include' });
+        if (!meRes.ok) {
+          showError('Please log in to continue. Redirecting...');
+          setTimeout(() => { window.location.href = '/'; }, 2000);
+          return;
+        }
+
+        // Check if returning from redirect (3D Secure, etc.)
+        const urlParams = new URLSearchParams(window.location.search);
+        if (urlParams.get('status') === 'processing' && urlParams.get('setup_intent')) {
+          const redirectSetupIntentId = urlParams.get('setup_intent');
+          // Clear URL params
+          window.history.replaceState({}, '', '/checkout?plan=' + plan + '&site=' + site);
+          // Create subscription with the confirmed SetupIntent
+          document.getElementById('submit-btn').textContent = 'Creating subscription...';
+          document.getElementById('submit-btn').disabled = true;
+          const subRes = await fetch(API + '/billing/create-subscription', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ plan, site, setup_intent_id: redirectSetupIntentId })
+          });
+          const subData = await subRes.json();
+          if (subData.error) {
+            showError(subData.error);
+            document.getElementById('submit-btn').disabled = false;
+            document.getElementById('submit-btn').textContent = 'Subscribe';
+            return;
+          }
+          window.location.href = '/?billing=success';
+          return;
+        }
+
+        // Get Stripe config
+        const configRes = await fetch(API + '/billing/config', { credentials: 'include' });
+        if (!configRes.ok) {
+          showError('Failed to load payment configuration');
+          return;
+        }
+        const config = await configRes.json();
+        stripe = Stripe(config.publishable_key);
+
+        // Create SetupIntent
+        if (!site) {
+          showError('No site specified. Please go back to the dashboard and select a site to upgrade.');
+          return;
+        }
+
+        const siRes = await fetch(API + '/billing/setup-intent', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ plan, site })
+        });
+        const siData = await siRes.json();
+
+        if (siData.error) {
+          showError(siData.error);
+          return;
+        }
+
+        if (!siData.client_secret) {
+          showError('Failed to initialize payment. Missing client_secret.');
+          return;
+        }
+
+        setupIntentId = siData.setup_intent_id;
+
+        // Create Payment Element
+        elements = stripe.elements({
+          clientSecret: siData.client_secret,
+          appearance: {
+            theme: 'night',
+            variables: {
+              colorPrimary: '#00d4ff',
+              colorBackground: '#111',
+              colorText: '#fff',
+              colorDanger: '#ff4444',
+              fontFamily: 'system-ui, -apple-system, sans-serif',
+              borderRadius: '6px',
+            },
+            rules: {
+              '.Input': {
+                border: '1px solid #333',
+                backgroundColor: '#0a0a0b',
+              },
+              '.Input:focus': {
+                border: '1px solid #00d4ff',
+              },
+              '.Label': {
+                color: '#888',
+              },
+            },
+          },
+        });
+
+        const paymentElement = elements.create('payment', {
+          layout: 'tabs',
+          paymentMethodOrder: ['apple_pay', 'google_pay', 'card', 'link'],
+        });
+        paymentElement.mount('#payment-element');
+
+        paymentElement.on('ready', () => {
+          document.getElementById('submit-btn').disabled = false;
+        });
+
+      } catch (err) {
+        showError('Failed to initialize checkout: ' + err.message);
+      }
+    }
+
+    async function handleSubmit() {
+      const btn = document.getElementById('submit-btn');
+      btn.disabled = true;
+      btn.textContent = 'Processing...';
+      hideError();
+
+      try {
+        // Confirm the SetupIntent
+        const { error, setupIntent } = await stripe.confirmSetup({
+          elements,
+          confirmParams: {
+            return_url: window.location.origin + '/checkout?plan=' + plan + '&site=' + site + '&status=processing',
+          },
+          redirect: 'if_required',
+        });
+
+        if (error) {
+          showError(error.message);
+          btn.disabled = false;
+          btn.textContent = 'Subscribe';
+          return;
+        }
+
+        // SetupIntent confirmed, now create the subscription
+        btn.textContent = 'Creating subscription...';
+
+        const subRes = await fetch(API + '/billing/create-subscription', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ plan, site, setup_intent_id: setupIntentId })
+        });
+        const subData = await subRes.json();
+
+        if (subData.error) {
+          showError(subData.error);
+          btn.disabled = false;
+          btn.textContent = 'Subscribe';
+          return;
+        }
+
+        // Success! Redirect to dashboard
+        window.location.href = '/?billing=success';
+
+      } catch (err) {
+        showError('Payment failed: ' + err.message);
+        btn.disabled = false;
+        btn.textContent = 'Subscribe';
+      }
+    }
+
+    function showError(msg) {
+      const el = document.getElementById('error-message');
+      el.textContent = msg;
+      el.style.display = 'block';
+    }
+
+    function hideError() {
+      document.getElementById('error-message').style.display = 'none';
+    }
+
+    document.getElementById('submit-btn').addEventListener('click', handleSubmit);
+    init();
+  </script>
+</body>
+</html>`;
+}
+
 function dashboardPage() {
   return `<!DOCTYPE html>
 <html lang="en">
@@ -823,6 +1205,7 @@ function dashboardPage() {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Dashboard - itsalive.co</title>
+  <script src="https://js.stripe.com/v3/"></script>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
@@ -1328,12 +1711,19 @@ function dashboardPage() {
       }
 
       const billing = window.currentBilling;
-      const hasSubscription = billing?.subscription;
+      const subscriptions = billing?.subscriptions || {};
 
-      container.innerHTML = data.apps.map(app => \`
+      container.innerHTML = data.apps.map(app => {
+        const hasSiteSub = !!subscriptions[app.subdomain];
+        const siteSub = subscriptions[app.subdomain];
+        const planBadge = siteSub ? (siteSub.plan === 'pro_annual' ? 'Pro Annual' : 'Pro Monthly') : '';
+        return \`
         <div class="app-card">
           <div class="app-info">
-            <h3><a href="https://\${app.subdomain}.itsalive.co" target="_blank">\${app.email_app_name || app.subdomain}</a></h3>
+            <h3>
+              <a href="https://\${app.subdomain}.itsalive.co" target="_blank">\${app.email_app_name || app.subdomain}</a>
+              \${hasSiteSub ? '<span style="font-size:0.7rem;background:linear-gradient(135deg,#00d4ff,#7b2dff);color:#fff;padding:0.2rem 0.5rem;border-radius:4px;margin-left:0.5rem;font-weight:500;">' + planBadge + '</span>' : ''}
+            </h3>
             <div class="app-url">
               <a href="https://\${app.subdomain}.itsalive.co" target="_blank">\${app.subdomain}.itsalive.co</a>
               \${app.custom_domain ? ' → <a href="https://' + app.custom_domain + '" target="_blank">' + app.custom_domain + '</a>' : ''}
@@ -1341,13 +1731,13 @@ function dashboardPage() {
             <div class="app-meta">Created \${new Date(app.created_at).toLocaleDateString()}</div>
           </div>
           <div class="app-actions">
-            \${!hasSubscription ? '<button class="btn btn-small" onclick="openBilling()" style="background:linear-gradient(135deg,#7b2dff,#00d4ff);border:none;">Upgrade</button>' : ''}
+            \${!hasSiteSub ? '<a href="/checkout?plan=pro_annual&site=' + app.subdomain + '" class="btn btn-small" style="background:linear-gradient(135deg,#7b2dff,#00d4ff);border:none;">Upgrade</a>' : ''}
             <a href="/stats/\${app.subdomain}" class="btn btn-secondary btn-small">Stats</a>
             <button class="btn btn-secondary btn-small" onclick="openSettings('\${app.subdomain}')">Settings</button>
             <a href="https://\${app.subdomain}.itsalive.co" target="_blank" class="btn btn-small">Visit</a>
           </div>
         </div>
-      \`).join('');
+      \`;}).join('');
     }
 
     async function openSettings(subdomain) {
@@ -1963,7 +2353,9 @@ function dashboardPage() {
       const billing = window.currentBilling;
       if (!billing) return;
 
-      const hasSubscription = !!billing.subscription;
+      const subscriptions = billing.subscriptions || {};
+      const siteList = Object.keys(subscriptions);
+      const hasAnySubscription = siteList.length > 0;
       const balance = billing.credits?.balance || 0;
       const lifetimePurchased = billing.credits?.lifetime_purchased || 0;
       const lifetimeUsed = billing.credits?.lifetime_used || 0;
@@ -1971,40 +2363,36 @@ function dashboardPage() {
       const hasPaymentMethod = billing.has_payment_method;
 
       let subscriptionSection = '';
-      if (hasSubscription) {
-        const sub = billing.subscription;
-        const planName = sub.plan === 'pro_annual' ? 'Pro Annual' : 'Pro Monthly';
-        const renewDate = new Date(sub.current_period_end).toLocaleDateString();
+      if (hasAnySubscription) {
+        // Show all site subscriptions
+        const subItems = siteList.map(site => {
+          const sub = subscriptions[site];
+          const planName = sub.plan === 'pro_annual' ? 'Pro Annual' : 'Pro Monthly';
+          const renewDate = new Date(sub.current_period_end).toLocaleDateString();
+          return \`
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:0.75rem 0;border-bottom:1px solid rgba(255,255,255,0.05);">
+              <div>
+                <div style="font-weight:600;">\${site}.itsalive.co</div>
+                <div style="font-size:0.85rem;color:#888;">\${planName} - \${sub.cancel_at_period_end ? 'Cancels' : 'Renews'} \${renewDate}</div>
+              </div>
+            </div>
+          \`;
+        }).join('');
+
         subscriptionSection = \`
           <div style="background:linear-gradient(135deg,rgba(0,212,255,0.1),rgba(123,45,255,0.1));border:1px solid rgba(0,212,255,0.2);border-radius:12px;padding:1.5rem;margin-bottom:1.5rem;">
-            <div style="display:flex;justify-content:space-between;align-items:center;">
-              <div>
-                <div style="font-size:0.8rem;color:#888;text-transform:uppercase;letter-spacing:1px;">Current Plan</div>
-                <div style="font-size:1.5rem;font-weight:700;color:#00d4ff;margin-top:0.25rem;">\${planName}</div>
-                <div style="font-size:0.85rem;color:#666;margin-top:0.25rem;">\${sub.cancel_at_period_end ? 'Cancels' : 'Renews'} on \${renewDate}</div>
-              </div>
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
+              <div style="font-size:0.8rem;color:#888;text-transform:uppercase;letter-spacing:1px;">Active Subscriptions</div>
               <button class="btn btn-secondary btn-small" onclick="openPortal()">Manage</button>
             </div>
+            \${subItems}
           </div>
         \`;
       } else {
         subscriptionSection = \`
-          <div style="background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.08);border-radius:12px;padding:1.5rem;margin-bottom:1.5rem;">
-            <div style="font-size:0.8rem;color:#888;text-transform:uppercase;letter-spacing:1px;margin-bottom:1rem;">Upgrade to Pro</div>
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;">
-              <div id="plan-monthly" class="plan-card" onclick="selectPlan('pro_monthly')" style="border:2px solid #333;border-radius:12px;padding:1.25rem;cursor:pointer;transition:all 0.2s;">
-                <div style="font-weight:700;font-size:1.1rem;">Monthly</div>
-                <div style="font-size:2rem;font-weight:800;background:linear-gradient(135deg,#00d4ff,#7b2dff);-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin:0.5rem 0;">$5<span style="font-size:0.9rem;font-weight:400;">/mo</span></div>
-                <div style="font-size:0.85rem;color:#888;">1,500 credits/month</div>
-              </div>
-              <div id="plan-annual" class="plan-card" onclick="selectPlan('pro_annual')" style="border:2px solid #333;border-radius:12px;padding:1.25rem;cursor:pointer;transition:all 0.2s;">
-                <div style="font-weight:700;font-size:1.1rem;">Annual</div>
-                <div style="font-size:2rem;font-weight:800;background:linear-gradient(135deg,#00d4ff,#7b2dff);-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin:0.5rem 0;">$50<span style="font-size:0.9rem;font-weight:400;">/yr</span></div>
-                <div style="font-size:0.85rem;color:#888;">20,000 credits/year</div>
-              </div>
-            </div>
-            <button id="checkout-btn" class="btn" onclick="startCheckout()" style="width:100%;margin-top:1rem;" disabled>Select a plan</button>
-            <div id="checkout-message" style="margin-top:0.5rem;"></div>
+          <div style="background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.08);border-radius:12px;padding:1.5rem;margin-bottom:1.5rem;text-align:center;">
+            <div style="font-size:0.9rem;color:#888;">No active subscriptions</div>
+            <div style="font-size:0.85rem;color:#666;margin-top:0.5rem;">Upgrade individual sites from the dashboard</div>
           </div>
         \`;
       }
@@ -2033,6 +2421,7 @@ function dashboardPage() {
 
           \${subscriptionSection}
 
+          \${hasAnySubscription ? \`
           <div style="background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.08);border-radius:12px;padding:1.5rem;">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
               <div>
@@ -2040,10 +2429,9 @@ function dashboardPage() {
                 <div style="font-size:0.85rem;color:#666;">Automatically add credits when balance is low</div>
               </div>
               <label style="display:flex;align-items:center;cursor:pointer;">
-                <input type="checkbox" id="auto-refill-toggle" \${autoRefill.enabled ? 'checked' : ''} \${!hasPaymentMethod && !hasSubscription ? 'disabled' : ''} onchange="toggleAutoRefill(this.checked)" style="width:40px;height:22px;appearance:none;background:#333;border-radius:11px;position:relative;cursor:pointer;transition:0.2s;">
+                <input type="checkbox" id="auto-refill-toggle" \${autoRefill.enabled ? 'checked' : ''} onchange="toggleAutoRefill(this.checked)" style="width:40px;height:22px;appearance:none;background:#333;border-radius:11px;position:relative;cursor:pointer;transition:0.2s;">
               </label>
             </div>
-            \${!hasPaymentMethod && !hasSubscription ? '<p style="font-size:0.85rem;color:#ffbd2e;margin-bottom:1rem;">Subscribe or add a payment method to enable auto-refill</p>' : ''}
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;font-size:0.9rem;">
               <div>
                 <div style="color:#666;font-size:0.8rem;margin-bottom:0.25rem;">When balance drops below</div>
@@ -2056,6 +2444,7 @@ function dashboardPage() {
             </div>
             <div id="auto-refill-message" style="margin-top:0.5rem;"></div>
           </div>
+          \` : ''}
 
           <div class="modal-actions" style="margin-top:1.5rem;">
             <button class="btn btn-secondary" onclick="viewTransactions()">View Transactions</button>
@@ -2064,7 +2453,7 @@ function dashboardPage() {
         </div>
       \`;
 
-      // Style the toggle
+      // Style the toggle and plan cards
       const style = document.createElement('style');
       style.textContent = \`
         #auto-refill-toggle:checked { background: #00d4ff; }
@@ -2080,50 +2469,11 @@ function dashboardPage() {
           transition: 0.2s;
         }
         #auto-refill-toggle:checked::after { left: 20px; }
-        .plan-card.selected { border-color: #00d4ff !important; background: rgba(0,212,255,0.05); }
+        .plan-card:hover { border-color: #00d4ff !important; background: rgba(0,212,255,0.05); }
       \`;
       modal.appendChild(style);
 
       document.getElementById('modal-container').appendChild(modal);
-    }
-
-    let selectedPlan = null;
-    function selectPlan(plan) {
-      selectedPlan = plan;
-      document.querySelectorAll('.plan-card').forEach(el => el.classList.remove('selected'));
-      document.getElementById(plan === 'pro_monthly' ? 'plan-monthly' : 'plan-annual').classList.add('selected');
-      document.getElementById('checkout-btn').disabled = false;
-      document.getElementById('checkout-btn').textContent = 'Subscribe to ' + (plan === 'pro_annual' ? 'Annual' : 'Monthly');
-    }
-
-    async function startCheckout() {
-      if (!selectedPlan) return;
-      const btn = document.getElementById('checkout-btn');
-      const msgEl = document.getElementById('checkout-message');
-      btn.disabled = true;
-      btn.textContent = 'Redirecting...';
-
-      try {
-        const res = await fetch(API + '/billing/checkout', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          credentials: 'include',
-          body: JSON.stringify({ plan: selectedPlan })
-        });
-        const data = await res.json();
-
-        if (data.checkout_url) {
-          window.location.href = data.checkout_url;
-        } else {
-          msgEl.innerHTML = '<div class="message error">' + (data.error || 'Failed to start checkout') + '</div>';
-          btn.disabled = false;
-          btn.textContent = 'Subscribe to ' + (selectedPlan === 'pro_annual' ? 'Annual' : 'Monthly');
-        }
-      } catch (err) {
-        msgEl.innerHTML = '<div class="message error">Error: ' + err.message + '</div>';
-        btn.disabled = false;
-        btn.textContent = 'Subscribe to ' + (selectedPlan === 'pro_annual' ? 'Annual' : 'Monthly');
-      }
     }
 
     async function openPortal() {

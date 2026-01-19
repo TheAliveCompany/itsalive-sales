@@ -325,10 +325,11 @@ CREATE TABLE IF NOT EXISTS stripe_customers (
   FOREIGN KEY (owner_id) REFERENCES owners(id)
 );
 
--- Subscriptions
+-- Subscriptions (per-site, credits are shared account-wide)
 CREATE TABLE IF NOT EXISTS subscriptions (
   id TEXT PRIMARY KEY,
   owner_id TEXT NOT NULL,
+  app_subdomain TEXT NOT NULL,
   stripe_subscription_id TEXT UNIQUE NOT NULL,
   plan TEXT NOT NULL,  -- 'pro_monthly' or 'pro_annual'
   status TEXT NOT NULL DEFAULT 'active',
@@ -337,7 +338,8 @@ CREATE TABLE IF NOT EXISTS subscriptions (
   cancel_at_period_end INTEGER DEFAULT 0,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-  FOREIGN KEY (owner_id) REFERENCES owners(id)
+  FOREIGN KEY (owner_id) REFERENCES owners(id),
+  FOREIGN KEY (app_subdomain) REFERENCES apps(subdomain)
 );
 
 -- Auto-refill settings
@@ -364,6 +366,7 @@ CREATE TABLE IF NOT EXISTS credit_transactions (
 );
 
 CREATE INDEX IF NOT EXISTS idx_subscriptions_owner ON subscriptions(owner_id);
+CREATE INDEX IF NOT EXISTS idx_subscriptions_app ON subscriptions(app_subdomain);
 CREATE INDEX IF NOT EXISTS idx_subscriptions_stripe ON subscriptions(stripe_subscription_id);
 CREATE INDEX IF NOT EXISTS idx_credit_transactions_owner ON credit_transactions(owner_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_stripe_customers_stripe ON stripe_customers(stripe_customer_id);
