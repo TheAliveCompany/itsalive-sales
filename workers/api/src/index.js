@@ -1229,6 +1229,585 @@ router.delete('/owner/app/:subdomain/dns/:recordId', async (request, env) => {
   return new Response(JSON.stringify({ success: true }));
 });
 
+// ============ BILLING ENDPOINTS ============
+
+// Stripe price IDs
+const STRIPE_PRICES = {
+  pro_monthly: 'price_1Sr7svAE4eT6zpWACXWWO3B5',
+  pro_annual: 'price_1Sr7swAE4eT6zpWAMLq5am4Y',
+  credit_pack: 'price_1Sr7swAE4eT6zpWAeFxEC5Zd',
+};
+
+const PLAN_CREDITS = {
+  pro_monthly: 1500,
+  pro_annual: 20000,
+  credit_pack: 50000,
+};
+
+// Helper to create or get Stripe customer for an owner
+async function getOrCreateStripeCustomer(env, ownerId, email) {
+  // Check if we have a Stripe customer for this owner
+  const existing = await env.DB.prepare(
+    'SELECT stripe_customer_id FROM stripe_customers WHERE owner_id = ?'
+  ).bind(ownerId).first();
+
+  if (existing) {
+    return existing.stripe_customer_id;
+  }
+
+  // Create a new Stripe customer
+  const response = await fetch('https://api.stripe.com/v1/customers', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${env.STRIPE_SECRET_KEY}`,
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body: new URLSearchParams({
+      email: email,
+      'metadata[owner_id]': ownerId,
+    }),
+  });
+
+  const customer = await response.json();
+  if (customer.error) {
+    throw new Error(customer.error.message);
+  }
+
+  // Save the customer mapping
+  await env.DB.prepare(
+    'INSERT INTO stripe_customers (owner_id, stripe_customer_id) VALUES (?, ?)'
+  ).bind(ownerId, customer.id).run();
+
+  return customer.id;
+}
+
+// Helper to add credits and log transaction
+async function addCreditsWithTransaction(env, ownerId, amount, type, stripePaymentId, description) {
+  const txId = generateId();
+
+  // Add credits
+  await env.DB.prepare(`
+    INSERT INTO owner_credits (owner_id, balance, lifetime_purchased)
+    VALUES (?, ?, ?)
+    ON CONFLICT(owner_id) DO UPDATE SET
+      balance = balance + excluded.balance,
+      lifetime_purchased = lifetime_purchased + excluded.lifetime_purchased,
+      updated_at = datetime('now')
+  `).bind(ownerId, amount, amount).run();
+
+  // Log transaction
+  await env.DB.prepare(`
+    INSERT INTO credit_transactions (id, owner_id, amount, type, stripe_payment_intent_id, description)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).bind(txId, ownerId, amount, type, stripePaymentId, description).run();
+
+  return txId;
+}
+
+// Helper to trigger auto-refill if needed
+async function checkAutoRefill(env, ownerId) {
+  // Get auto-refill settings
+  const settings = await env.DB.prepare(
+    'SELECT * FROM auto_refill_settings WHERE owner_id = ? AND enabled = 1'
+  ).bind(ownerId).first();
+
+  if (!settings) return null;
+
+  // Get current balance
+  const credits = await env.DB.prepare(
+    'SELECT balance FROM owner_credits WHERE owner_id = ?'
+  ).bind(ownerId).first();
+
+  const balance = credits?.balance || 0;
+
+  // Check if balance is below threshold
+  if (balance >= settings.threshold) return null;
+
+  // Get Stripe customer with payment method
+  const customer = await env.DB.prepare(
+    'SELECT stripe_customer_id, default_payment_method FROM stripe_customers WHERE owner_id = ?'
+  ).bind(ownerId).first();
+
+  if (!customer || !customer.default_payment_method) return null;
+
+  // Create a payment intent and charge immediately
+  const paymentResponse = await fetch('https://api.stripe.com/v1/payment_intents', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${env.STRIPE_SECRET_KEY}`,
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body: new URLSearchParams({
+      amount: settings.refill_price.toString(),  // in cents
+      currency: 'usd',
+      customer: customer.stripe_customer_id,
+      payment_method: customer.default_payment_method,
+      off_session: 'true',
+      confirm: 'true',
+      'metadata[owner_id]': ownerId,
+      'metadata[type]': 'auto_refill',
+    }),
+  });
+
+  const payment = await paymentResponse.json();
+  if (payment.error) {
+    console.error('Auto-refill failed:', payment.error.message);
+    return { error: payment.error.message };
+  }
+
+  if (payment.status === 'succeeded') {
+    // Add credits
+    await addCreditsWithTransaction(
+      env,
+      ownerId,
+      settings.refill_amount,
+      'auto_refill',
+      payment.id,
+      `Auto-refill: ${settings.refill_amount.toLocaleString()} credits for $${(settings.refill_price / 100).toFixed(2)}`
+    );
+
+    // Update last refill time
+    await env.DB.prepare(
+      'UPDATE auto_refill_settings SET last_refill_at = datetime(\'now\') WHERE owner_id = ?'
+    ).bind(ownerId).run();
+
+    return { success: true, credits_added: settings.refill_amount };
+  }
+
+  return { error: 'Payment not completed' };
+}
+
+// POST /billing/checkout - Create Stripe checkout session for subscription
+router.post('/billing/checkout', async (request, env) => {
+  const owner = await getOwnerSession(request, env);
+  if (!owner) {
+    return new Response(JSON.stringify({ error: 'Not logged in' }), { status: 401 });
+  }
+
+  const { plan } = await request.json();
+
+  if (!plan || !['pro_monthly', 'pro_annual'].includes(plan)) {
+    return new Response(JSON.stringify({ error: 'Invalid plan. Choose pro_monthly or pro_annual' }), { status: 400 });
+  }
+
+  // Get or create Stripe customer
+  const stripeCustomerId = await getOrCreateStripeCustomer(env, owner.owner_id, owner.email);
+
+  // Check for existing active subscription
+  const existing = await env.DB.prepare(
+    'SELECT * FROM subscriptions WHERE owner_id = ? AND status = \'active\''
+  ).bind(owner.owner_id).first();
+
+  if (existing) {
+    return new Response(JSON.stringify({
+      error: 'You already have an active subscription',
+      current_plan: existing.plan,
+    }), { status: 400 });
+  }
+
+  // Create Stripe checkout session
+  const response = await fetch('https://api.stripe.com/v1/checkout/sessions', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${env.STRIPE_SECRET_KEY}`,
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body: new URLSearchParams({
+      customer: stripeCustomerId,
+      mode: 'subscription',
+      'line_items[0][price]': STRIPE_PRICES[plan],
+      'line_items[0][quantity]': '1',
+      success_url: 'https://dashboard.itsalive.co/?billing=success',
+      cancel_url: 'https://dashboard.itsalive.co/?billing=canceled',
+      'subscription_data[metadata][owner_id]': owner.owner_id,
+      'subscription_data[metadata][plan]': plan,
+      payment_method_collection: 'always',
+    }),
+  });
+
+  const session = await response.json();
+  if (session.error) {
+    return new Response(JSON.stringify({ error: session.error.message }), { status: 400 });
+  }
+
+  return { checkout_url: session.url };
+});
+
+// POST /billing/portal - Get Stripe customer portal URL
+router.post('/billing/portal', async (request, env) => {
+  const owner = await getOwnerSession(request, env);
+  if (!owner) {
+    return new Response(JSON.stringify({ error: 'Not logged in' }), { status: 401 });
+  }
+
+  // Get Stripe customer
+  const customer = await env.DB.prepare(
+    'SELECT stripe_customer_id FROM stripe_customers WHERE owner_id = ?'
+  ).bind(owner.owner_id).first();
+
+  if (!customer) {
+    return new Response(JSON.stringify({ error: 'No billing account found' }), { status: 404 });
+  }
+
+  // Create portal session
+  const response = await fetch('https://api.stripe.com/v1/billing_portal/sessions', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${env.STRIPE_SECRET_KEY}`,
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body: new URLSearchParams({
+      customer: customer.stripe_customer_id,
+      return_url: 'https://dashboard.itsalive.co/',
+    }),
+  });
+
+  const session = await response.json();
+  if (session.error) {
+    return new Response(JSON.stringify({ error: session.error.message }), { status: 400 });
+  }
+
+  return { portal_url: session.url };
+});
+
+// GET /billing/info - Get billing status
+router.get('/billing/info', async (request, env) => {
+  const owner = await getOwnerSession(request, env);
+  if (!owner) {
+    return new Response(JSON.stringify({ error: 'Not logged in' }), { status: 401 });
+  }
+
+  // Get subscription
+  const subscription = await env.DB.prepare(
+    'SELECT plan, status, current_period_end, cancel_at_period_end FROM subscriptions WHERE owner_id = ? AND status IN (\'active\', \'past_due\')'
+  ).bind(owner.owner_id).first();
+
+  // Get credits
+  const credits = await env.DB.prepare(
+    'SELECT balance, lifetime_purchased, lifetime_used FROM owner_credits WHERE owner_id = ?'
+  ).bind(owner.owner_id).first();
+
+  // Check if user has payment method for auto-refill
+  const customer = await env.DB.prepare(
+    'SELECT default_payment_method FROM stripe_customers WHERE owner_id = ?'
+  ).bind(owner.owner_id).first();
+
+  // Get auto-refill settings, auto-create with enabled=1 if user has subscription + payment method
+  let autoRefill = await env.DB.prepare(
+    'SELECT enabled, threshold, refill_amount, refill_price FROM auto_refill_settings WHERE owner_id = ?'
+  ).bind(owner.owner_id).first();
+
+  // Auto-enable for subscribers with payment method who don't have settings yet
+  if (!autoRefill && subscription && customer?.default_payment_method) {
+    await env.DB.prepare(`
+      INSERT INTO auto_refill_settings (owner_id, enabled, threshold, refill_amount, refill_price)
+      VALUES (?, 1, 10000, 50000, 5000)
+    `).bind(owner.owner_id).run();
+    autoRefill = { enabled: 1, threshold: 10000, refill_amount: 50000, refill_price: 5000 };
+  }
+
+  return {
+    subscription: subscription ? {
+      plan: subscription.plan,
+      status: subscription.status,
+      current_period_end: subscription.current_period_end,
+      cancel_at_period_end: !!subscription.cancel_at_period_end,
+    } : null,
+    credits: {
+      balance: credits?.balance || 0,
+      lifetime_purchased: credits?.lifetime_purchased || 0,
+      lifetime_used: credits?.lifetime_used || 0,
+    },
+    auto_refill: autoRefill ? {
+      enabled: !!autoRefill.enabled,
+      threshold: autoRefill.threshold,
+      refill_amount: autoRefill.refill_amount,
+      price_cents: autoRefill.refill_price,
+    } : {
+      enabled: false,
+      threshold: 10000,
+      refill_amount: 50000,
+      price_cents: 5000,
+    },
+    has_payment_method: !!customer?.default_payment_method,
+  };
+});
+
+// PUT /billing/auto-refill - Configure auto-refill settings
+router.put('/billing/auto-refill', async (request, env) => {
+  const owner = await getOwnerSession(request, env);
+  if (!owner) {
+    return new Response(JSON.stringify({ error: 'Not logged in' }), { status: 401 });
+  }
+
+  const { enabled, threshold } = await request.json();
+
+  if (enabled !== undefined && typeof enabled !== 'boolean') {
+    return new Response(JSON.stringify({ error: 'enabled must be a boolean' }), { status: 400 });
+  }
+
+  if (threshold !== undefined && (typeof threshold !== 'number' || threshold < 0)) {
+    return new Response(JSON.stringify({ error: 'threshold must be a non-negative number' }), { status: 400 });
+  }
+
+  // If enabling, check for payment method
+  if (enabled) {
+    const customer = await env.DB.prepare(
+      'SELECT default_payment_method FROM stripe_customers WHERE owner_id = ?'
+    ).bind(owner.owner_id).first();
+
+    if (!customer?.default_payment_method) {
+      return new Response(JSON.stringify({
+        error: 'Add a payment method first. Use the billing portal to add a card.',
+      }), { status: 400 });
+    }
+  }
+
+  // Upsert auto-refill settings
+  await env.DB.prepare(`
+    INSERT INTO auto_refill_settings (owner_id, enabled, threshold)
+    VALUES (?, ?, ?)
+    ON CONFLICT(owner_id) DO UPDATE SET
+      enabled = COALESCE(excluded.enabled, enabled),
+      threshold = COALESCE(excluded.threshold, threshold)
+  `).bind(
+    owner.owner_id,
+    enabled !== undefined ? (enabled ? 1 : 0) : 1,
+    threshold || 10000
+  ).run();
+
+  const settings = await env.DB.prepare(
+    'SELECT * FROM auto_refill_settings WHERE owner_id = ?'
+  ).bind(owner.owner_id).first();
+
+  return {
+    enabled: !!settings.enabled,
+    threshold: settings.threshold,
+    refill_amount: settings.refill_amount,
+    price_cents: settings.refill_price,
+  };
+});
+
+// POST /billing/webhook - Stripe webhook handler
+router.post('/billing/webhook', async (request, env) => {
+  const signature = request.headers.get('stripe-signature');
+  const body = await request.text();
+
+  // Verify webhook signature
+  if (!signature || !env.STRIPE_WEBHOOK_SECRET) {
+    return new Response(JSON.stringify({ error: 'Missing signature or webhook secret' }), { status: 400 });
+  }
+
+  // Parse signature header
+  const sigParts = {};
+  for (const part of signature.split(',')) {
+    const [key, value] = part.split('=');
+    sigParts[key] = value;
+  }
+
+  const timestamp = sigParts['t'];
+  const v1Signature = sigParts['v1'];
+
+  if (!timestamp || !v1Signature) {
+    return new Response(JSON.stringify({ error: 'Invalid signature format' }), { status: 400 });
+  }
+
+  // Verify timestamp (within 5 minutes)
+  const now = Math.floor(Date.now() / 1000);
+  if (Math.abs(now - parseInt(timestamp)) > 300) {
+    return new Response(JSON.stringify({ error: 'Timestamp too old' }), { status: 400 });
+  }
+
+  // Compute expected signature
+  const signedPayload = `${timestamp}.${body}`;
+  const encoder = new TextEncoder();
+  const key = await crypto.subtle.importKey(
+    'raw',
+    encoder.encode(env.STRIPE_WEBHOOK_SECRET),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign']
+  );
+  const signatureBytes = await crypto.subtle.sign('HMAC', key, encoder.encode(signedPayload));
+  const expectedSignature = Array.from(new Uint8Array(signatureBytes))
+    .map(b => b.toString(16).padStart(2, '0'))
+    .join('');
+
+  if (expectedSignature !== v1Signature) {
+    return new Response(JSON.stringify({ error: 'Invalid signature' }), { status: 400 });
+  }
+
+  // Parse event
+  const event = JSON.parse(body);
+  console.log('Stripe webhook:', event.type);
+
+  try {
+    switch (event.type) {
+      case 'checkout.session.completed': {
+        const session = event.data.object;
+        if (session.mode === 'subscription' && session.subscription) {
+          // Fetch the subscription to get details
+          const subResponse = await fetch(
+            `https://api.stripe.com/v1/subscriptions/${session.subscription}`,
+            {
+              headers: { 'Authorization': `Bearer ${env.STRIPE_SECRET_KEY}` },
+            }
+          );
+          const subscription = await subResponse.json();
+
+          const ownerId = subscription.metadata?.owner_id;
+          const plan = subscription.metadata?.plan;
+
+          if (ownerId && plan) {
+            // Create subscription record
+            await env.DB.prepare(`
+              INSERT INTO subscriptions (id, owner_id, stripe_subscription_id, plan, status, current_period_start, current_period_end)
+              VALUES (?, ?, ?, ?, ?, datetime(?, 'unixepoch'), datetime(?, 'unixepoch'))
+            `).bind(
+              generateId(),
+              ownerId,
+              subscription.id,
+              plan,
+              subscription.status,
+              subscription.current_period_start,
+              subscription.current_period_end
+            ).run();
+
+            // Grant initial credits
+            const credits = PLAN_CREDITS[plan] || 1500;
+            await addCreditsWithTransaction(
+              env,
+              ownerId,
+              credits,
+              'subscription',
+              session.payment_intent,
+              `${plan === 'pro_annual' ? 'Pro Annual' : 'Pro Monthly'} subscription - ${credits.toLocaleString()} credits`
+            );
+
+            // Save payment method for auto-refill
+            if (session.payment_method_collection === 'always' && subscription.default_payment_method) {
+              await env.DB.prepare(
+                'UPDATE stripe_customers SET default_payment_method = ? WHERE owner_id = ?'
+              ).bind(subscription.default_payment_method, ownerId).run();
+
+              // Enable auto-refill by default for new subscribers
+              await env.DB.prepare(`
+                INSERT INTO auto_refill_settings (owner_id, enabled, threshold, refill_amount, refill_price)
+                VALUES (?, 1, 10000, 50000, 5000)
+                ON CONFLICT(owner_id) DO UPDATE SET enabled = 1
+              `).bind(ownerId).run();
+            }
+          }
+        }
+        break;
+      }
+
+      case 'invoice.paid': {
+        const invoice = event.data.object;
+        // Skip if this is the first invoice (handled by checkout.session.completed)
+        if (invoice.billing_reason === 'subscription_cycle') {
+          const subscription = await env.DB.prepare(
+            'SELECT owner_id, plan FROM subscriptions WHERE stripe_subscription_id = ?'
+          ).bind(invoice.subscription).first();
+
+          if (subscription) {
+            const credits = PLAN_CREDITS[subscription.plan] || 1500;
+            await addCreditsWithTransaction(
+              env,
+              subscription.owner_id,
+              credits,
+              'subscription',
+              invoice.payment_intent,
+              `${subscription.plan === 'pro_annual' ? 'Pro Annual' : 'Pro Monthly'} renewal - ${credits.toLocaleString()} credits`
+            );
+          }
+        }
+        break;
+      }
+
+      case 'customer.subscription.updated': {
+        const subscription = event.data.object;
+        await env.DB.prepare(`
+          UPDATE subscriptions
+          SET status = ?, current_period_start = datetime(?, 'unixepoch'), current_period_end = datetime(?, 'unixepoch'), cancel_at_period_end = ?, updated_at = datetime('now')
+          WHERE stripe_subscription_id = ?
+        `).bind(
+          subscription.status,
+          subscription.current_period_start,
+          subscription.current_period_end,
+          subscription.cancel_at_period_end ? 1 : 0,
+          subscription.id
+        ).run();
+        break;
+      }
+
+      case 'customer.subscription.deleted': {
+        const subscription = event.data.object;
+        await env.DB.prepare(
+          'UPDATE subscriptions SET status = \'canceled\', updated_at = datetime(\'now\') WHERE stripe_subscription_id = ?'
+        ).bind(subscription.id).run();
+        break;
+      }
+
+      case 'payment_intent.succeeded': {
+        const paymentIntent = event.data.object;
+        // Handle auto-refill payments (already processed in checkAutoRefill, but log if missed)
+        if (paymentIntent.metadata?.type === 'auto_refill') {
+          console.log('Auto-refill payment confirmed:', paymentIntent.id);
+        }
+        break;
+      }
+
+      case 'payment_method.attached': {
+        // Update default payment method when user adds one
+        const paymentMethod = event.data.object;
+        if (paymentMethod.customer) {
+          await env.DB.prepare(
+            'UPDATE stripe_customers SET default_payment_method = ? WHERE stripe_customer_id = ?'
+          ).bind(paymentMethod.id, paymentMethod.customer).run();
+        }
+        break;
+      }
+    }
+
+    return { received: true };
+  } catch (e) {
+    console.error('Webhook processing error:', e);
+    return new Response(JSON.stringify({ error: 'Webhook processing failed' }), { status: 500 });
+  }
+});
+
+// GET /billing/transactions - Get credit transaction history
+router.get('/billing/transactions', async (request, env) => {
+  const owner = await getOwnerSession(request, env);
+  if (!owner) {
+    return new Response(JSON.stringify({ error: 'Not logged in' }), { status: 401 });
+  }
+
+  const url = new URL(request.url);
+  const limit = Math.min(parseInt(url.searchParams.get('limit') || '50'), 100);
+  const offset = parseInt(url.searchParams.get('offset') || '0');
+
+  const transactions = await env.DB.prepare(`
+    SELECT id, amount, type, description, created_at
+    FROM credit_transactions
+    WHERE owner_id = ?
+    ORDER BY created_at DESC
+    LIMIT ? OFFSET ?
+  `).bind(owner.owner_id, limit, offset).all();
+
+  const total = await env.DB.prepare(
+    'SELECT COUNT(*) as count FROM credit_transactions WHERE owner_id = ?'
+  ).bind(owner.owner_id).first();
+
+  return {
+    transactions: transactions.results,
+    total: total?.count || 0,
+    limit,
+    offset,
+  };
+});
+
 // ============ APP SETTINGS ENDPOINTS ============
 
 // GET /app/settings - Get app settings (custom domain, etc.)
@@ -4992,7 +5571,13 @@ async function checkAndDeductCredits(env, subdomain, creditsNeeded) {
     WHERE owner_id = ?
   `).bind(creditsNeeded, creditsNeeded, ownerId).run();
 
-  return { success: true, balance: balance - creditsNeeded, owner_id: ownerId };
+  const newBalance = balance - creditsNeeded;
+
+  // Trigger auto-refill check in background (non-blocking)
+  // This runs asynchronously so we don't delay the response
+  checkAutoRefill(env, ownerId).catch(e => console.error('Auto-refill check failed:', e));
+
+  return { success: true, balance: newBalance, owner_id: ownerId };
 }
 
 // Helper to refund credits if request fails (owner-based)

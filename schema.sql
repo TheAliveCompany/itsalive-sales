@@ -315,3 +315,55 @@ CREATE TABLE IF NOT EXISTS upload_usage (
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_upload_usage_app ON upload_usage(app_subdomain, created_at);
+
+-- Stripe customer tracking
+CREATE TABLE IF NOT EXISTS stripe_customers (
+  owner_id TEXT PRIMARY KEY,
+  stripe_customer_id TEXT UNIQUE NOT NULL,
+  default_payment_method TEXT,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (owner_id) REFERENCES owners(id)
+);
+
+-- Subscriptions
+CREATE TABLE IF NOT EXISTS subscriptions (
+  id TEXT PRIMARY KEY,
+  owner_id TEXT NOT NULL,
+  stripe_subscription_id TEXT UNIQUE NOT NULL,
+  plan TEXT NOT NULL,  -- 'pro_monthly' or 'pro_annual'
+  status TEXT NOT NULL DEFAULT 'active',
+  current_period_start DATETIME,
+  current_period_end DATETIME,
+  cancel_at_period_end INTEGER DEFAULT 0,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (owner_id) REFERENCES owners(id)
+);
+
+-- Auto-refill settings
+CREATE TABLE IF NOT EXISTS auto_refill_settings (
+  owner_id TEXT PRIMARY KEY,
+  enabled INTEGER DEFAULT 1,
+  threshold INTEGER DEFAULT 10000,
+  refill_amount INTEGER DEFAULT 50000,
+  refill_price INTEGER DEFAULT 5000,  -- $50.00 in cents
+  last_refill_at DATETIME,
+  FOREIGN KEY (owner_id) REFERENCES owners(id)
+);
+
+-- Credit transactions log
+CREATE TABLE IF NOT EXISTS credit_transactions (
+  id TEXT PRIMARY KEY,
+  owner_id TEXT NOT NULL,
+  amount INTEGER NOT NULL,
+  type TEXT NOT NULL,  -- 'subscription', 'auto_refill', 'signup_bonus', 'manual'
+  stripe_payment_intent_id TEXT,
+  description TEXT,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (owner_id) REFERENCES owners(id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_subscriptions_owner ON subscriptions(owner_id);
+CREATE INDEX IF NOT EXISTS idx_subscriptions_stripe ON subscriptions(stripe_subscription_id);
+CREATE INDEX IF NOT EXISTS idx_credit_transactions_owner ON credit_transactions(owner_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_stripe_customers_stripe ON stripe_customers(stripe_customer_id);

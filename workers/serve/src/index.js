@@ -1270,9 +1270,38 @@ function dashboardPage() {
         }
 
         currentUser = await res.json();
-        document.getElementById('header-right').innerHTML =
-          '<span class="user-email">' + currentUser.email + '</span>' +
-          '<button class="btn btn-secondary btn-small" onclick="logout()">Log Out</button>';
+
+        // Load billing info
+        const billingRes = await fetch(API + '/billing/info', { credentials: 'include' });
+        const billing = billingRes.ok ? await billingRes.json() : null;
+
+        let headerHtml = '';
+        if (billing) {
+          const balance = billing.credits?.balance || 0;
+          const planLabel = billing.subscription ? (billing.subscription.plan === 'pro_annual' ? 'Pro Annual' : 'Pro Monthly') : 'Free';
+          headerHtml += '<div class="credits-badge" onclick="openBilling()" style="cursor:pointer;display:flex;align-items:center;gap:0.5rem;padding:0.4rem 0.8rem;background:rgba(0,212,255,0.1);border:1px solid rgba(0,212,255,0.2);border-radius:20px;">';
+          headerHtml += '<span style="color:#00d4ff;font-weight:600;">' + balance.toLocaleString() + '</span>';
+          headerHtml += '<span style="color:#666;font-size:0.8rem;">credits</span>';
+          if (!billing.subscription) {
+            headerHtml += '<span style="margin-left:0.25rem;padding:0.15rem 0.4rem;background:#7b2dff;color:#fff;font-size:0.7rem;border-radius:10px;font-weight:600;">UPGRADE</span>';
+          }
+          headerHtml += '</div>';
+        }
+        headerHtml += '<span class="user-email">' + currentUser.email + '</span>';
+        headerHtml += '<button class="btn btn-secondary btn-small" onclick="logout()">Log Out</button>';
+        document.getElementById('header-right').innerHTML = headerHtml;
+
+        // Store billing for later use
+        window.currentBilling = billing;
+
+        // Check for billing success/cancel params
+        const urlParams = new URLSearchParams(window.location.search);
+        if (urlParams.get('billing') === 'success') {
+          showBillingSuccess();
+          window.history.replaceState({}, '', '/');
+        } else if (urlParams.get('billing') === 'canceled') {
+          window.history.replaceState({}, '', '/');
+        }
 
         document.getElementById('dashboard-view').classList.remove('hidden');
         loadApps();
@@ -1298,6 +1327,9 @@ function dashboardPage() {
         return;
       }
 
+      const billing = window.currentBilling;
+      const hasSubscription = billing?.subscription;
+
       container.innerHTML = data.apps.map(app => \`
         <div class="app-card">
           <div class="app-info">
@@ -1309,6 +1341,7 @@ function dashboardPage() {
             <div class="app-meta">Created \${new Date(app.created_at).toLocaleDateString()}</div>
           </div>
           <div class="app-actions">
+            \${!hasSubscription ? '<button class="btn btn-small" onclick="openBilling()" style="background:linear-gradient(135deg,#7b2dff,#00d4ff);border:none;">Upgrade</button>' : ''}
             <a href="/stats/\${app.subdomain}" class="btn btn-secondary btn-small">Stats</a>
             <button class="btn btn-secondary btn-small" onclick="openSettings('\${app.subdomain}')">Settings</button>
             <a href="https://\${app.subdomain}.itsalive.co" target="_blank" class="btn btn-small">Visit</a>
@@ -1913,6 +1946,276 @@ function dashboardPage() {
       if (currentStatsSubdomain) {
         document.getElementById('stats-content').innerHTML = '<p style="color:#888;">Loading...</p>';
         await loadStats(currentStatsSubdomain);
+      }
+    }
+
+    // ============ BILLING FUNCTIONS ============
+
+    function showBillingSuccess() {
+      const banner = document.createElement('div');
+      banner.style.cssText = 'position:fixed;top:0;left:0;right:0;background:linear-gradient(90deg,#00d4ff,#7b2dff);color:#fff;text-align:center;padding:1rem;font-weight:600;z-index:9999;';
+      banner.innerHTML = 'Payment successful! Your credits have been added. <button onclick="this.parentElement.remove()" style="margin-left:1rem;background:#fff;color:#000;border:none;padding:0.4rem 0.8rem;border-radius:4px;cursor:pointer;">Dismiss</button>';
+      document.body.prepend(banner);
+      setTimeout(() => banner.remove(), 10000);
+    }
+
+    async function openBilling() {
+      const billing = window.currentBilling;
+      if (!billing) return;
+
+      const hasSubscription = !!billing.subscription;
+      const balance = billing.credits?.balance || 0;
+      const lifetimePurchased = billing.credits?.lifetime_purchased || 0;
+      const lifetimeUsed = billing.credits?.lifetime_used || 0;
+      const autoRefill = billing.auto_refill || { enabled: false, threshold: 10000, refill_amount: 50000, price_cents: 5000 };
+      const hasPaymentMethod = billing.has_payment_method;
+
+      let subscriptionSection = '';
+      if (hasSubscription) {
+        const sub = billing.subscription;
+        const planName = sub.plan === 'pro_annual' ? 'Pro Annual' : 'Pro Monthly';
+        const renewDate = new Date(sub.current_period_end).toLocaleDateString();
+        subscriptionSection = \`
+          <div style="background:linear-gradient(135deg,rgba(0,212,255,0.1),rgba(123,45,255,0.1));border:1px solid rgba(0,212,255,0.2);border-radius:12px;padding:1.5rem;margin-bottom:1.5rem;">
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+              <div>
+                <div style="font-size:0.8rem;color:#888;text-transform:uppercase;letter-spacing:1px;">Current Plan</div>
+                <div style="font-size:1.5rem;font-weight:700;color:#00d4ff;margin-top:0.25rem;">\${planName}</div>
+                <div style="font-size:0.85rem;color:#666;margin-top:0.25rem;">\${sub.cancel_at_period_end ? 'Cancels' : 'Renews'} on \${renewDate}</div>
+              </div>
+              <button class="btn btn-secondary btn-small" onclick="openPortal()">Manage</button>
+            </div>
+          </div>
+        \`;
+      } else {
+        subscriptionSection = \`
+          <div style="background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.08);border-radius:12px;padding:1.5rem;margin-bottom:1.5rem;">
+            <div style="font-size:0.8rem;color:#888;text-transform:uppercase;letter-spacing:1px;margin-bottom:1rem;">Upgrade to Pro</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;">
+              <div id="plan-monthly" class="plan-card" onclick="selectPlan('pro_monthly')" style="border:2px solid #333;border-radius:12px;padding:1.25rem;cursor:pointer;transition:all 0.2s;">
+                <div style="font-weight:700;font-size:1.1rem;">Monthly</div>
+                <div style="font-size:2rem;font-weight:800;background:linear-gradient(135deg,#00d4ff,#7b2dff);-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin:0.5rem 0;">$5<span style="font-size:0.9rem;font-weight:400;">/mo</span></div>
+                <div style="font-size:0.85rem;color:#888;">1,500 credits/month</div>
+              </div>
+              <div id="plan-annual" class="plan-card" onclick="selectPlan('pro_annual')" style="border:2px solid #333;border-radius:12px;padding:1.25rem;cursor:pointer;transition:all 0.2s;">
+                <div style="font-weight:700;font-size:1.1rem;">Annual</div>
+                <div style="font-size:2rem;font-weight:800;background:linear-gradient(135deg,#00d4ff,#7b2dff);-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin:0.5rem 0;">$50<span style="font-size:0.9rem;font-weight:400;">/yr</span></div>
+                <div style="font-size:0.85rem;color:#888;">20,000 credits/year</div>
+              </div>
+            </div>
+            <button id="checkout-btn" class="btn" onclick="startCheckout()" style="width:100%;margin-top:1rem;" disabled>Select a plan</button>
+            <div id="checkout-message" style="margin-top:0.5rem;"></div>
+          </div>
+        \`;
+      }
+
+      const modal = document.createElement('div');
+      modal.className = 'modal-overlay';
+      modal.onclick = (e) => { if (e.target === modal) modal.remove(); };
+      modal.innerHTML = \`
+        <div class="modal" style="max-width:550px;">
+          <h2>Billing & Credits</h2>
+
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:1rem;margin:1.5rem 0;">
+            <div style="text-align:center;padding:1rem;background:rgba(255,255,255,0.02);border-radius:8px;">
+              <div style="font-size:1.75rem;font-weight:700;color:#00d4ff;">\${balance.toLocaleString()}</div>
+              <div style="font-size:0.75rem;color:#666;text-transform:uppercase;">Balance</div>
+            </div>
+            <div style="text-align:center;padding:1rem;background:rgba(255,255,255,0.02);border-radius:8px;">
+              <div style="font-size:1.75rem;font-weight:700;color:#7b2dff;">\${lifetimePurchased.toLocaleString()}</div>
+              <div style="font-size:0.75rem;color:#666;text-transform:uppercase;">Purchased</div>
+            </div>
+            <div style="text-align:center;padding:1rem;background:rgba(255,255,255,0.02);border-radius:8px;">
+              <div style="font-size:1.75rem;font-weight:700;color:#ff2d7b;">\${lifetimeUsed.toLocaleString()}</div>
+              <div style="font-size:0.75rem;color:#666;text-transform:uppercase;">Used</div>
+            </div>
+          </div>
+
+          \${subscriptionSection}
+
+          <div style="background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.08);border-radius:12px;padding:1.5rem;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
+              <div>
+                <div style="font-weight:600;">Auto-Refill</div>
+                <div style="font-size:0.85rem;color:#666;">Automatically add credits when balance is low</div>
+              </div>
+              <label style="display:flex;align-items:center;cursor:pointer;">
+                <input type="checkbox" id="auto-refill-toggle" \${autoRefill.enabled ? 'checked' : ''} \${!hasPaymentMethod && !hasSubscription ? 'disabled' : ''} onchange="toggleAutoRefill(this.checked)" style="width:40px;height:22px;appearance:none;background:#333;border-radius:11px;position:relative;cursor:pointer;transition:0.2s;">
+              </label>
+            </div>
+            \${!hasPaymentMethod && !hasSubscription ? '<p style="font-size:0.85rem;color:#ffbd2e;margin-bottom:1rem;">Subscribe or add a payment method to enable auto-refill</p>' : ''}
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;font-size:0.9rem;">
+              <div>
+                <div style="color:#666;font-size:0.8rem;margin-bottom:0.25rem;">When balance drops below</div>
+                <div style="font-weight:600;">\${autoRefill.threshold.toLocaleString()} credits</div>
+              </div>
+              <div>
+                <div style="color:#666;font-size:0.8rem;margin-bottom:0.25rem;">Auto-purchase</div>
+                <div style="font-weight:600;">\${autoRefill.refill_amount.toLocaleString()} credits for $\${(autoRefill.price_cents / 100).toFixed(0)}</div>
+              </div>
+            </div>
+            <div id="auto-refill-message" style="margin-top:0.5rem;"></div>
+          </div>
+
+          <div class="modal-actions" style="margin-top:1.5rem;">
+            <button class="btn btn-secondary" onclick="viewTransactions()">View Transactions</button>
+            <button class="btn btn-secondary" onclick="this.closest('.modal-overlay').remove()">Close</button>
+          </div>
+        </div>
+      \`;
+
+      // Style the toggle
+      const style = document.createElement('style');
+      style.textContent = \`
+        #auto-refill-toggle:checked { background: #00d4ff; }
+        #auto-refill-toggle::after {
+          content: '';
+          position: absolute;
+          top: 2px;
+          left: 2px;
+          width: 18px;
+          height: 18px;
+          background: #fff;
+          border-radius: 50%;
+          transition: 0.2s;
+        }
+        #auto-refill-toggle:checked::after { left: 20px; }
+        .plan-card.selected { border-color: #00d4ff !important; background: rgba(0,212,255,0.05); }
+      \`;
+      modal.appendChild(style);
+
+      document.getElementById('modal-container').appendChild(modal);
+    }
+
+    let selectedPlan = null;
+    function selectPlan(plan) {
+      selectedPlan = plan;
+      document.querySelectorAll('.plan-card').forEach(el => el.classList.remove('selected'));
+      document.getElementById(plan === 'pro_monthly' ? 'plan-monthly' : 'plan-annual').classList.add('selected');
+      document.getElementById('checkout-btn').disabled = false;
+      document.getElementById('checkout-btn').textContent = 'Subscribe to ' + (plan === 'pro_annual' ? 'Annual' : 'Monthly');
+    }
+
+    async function startCheckout() {
+      if (!selectedPlan) return;
+      const btn = document.getElementById('checkout-btn');
+      const msgEl = document.getElementById('checkout-message');
+      btn.disabled = true;
+      btn.textContent = 'Redirecting...';
+
+      try {
+        const res = await fetch(API + '/billing/checkout', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ plan: selectedPlan })
+        });
+        const data = await res.json();
+
+        if (data.checkout_url) {
+          window.location.href = data.checkout_url;
+        } else {
+          msgEl.innerHTML = '<div class="message error">' + (data.error || 'Failed to start checkout') + '</div>';
+          btn.disabled = false;
+          btn.textContent = 'Subscribe to ' + (selectedPlan === 'pro_annual' ? 'Annual' : 'Monthly');
+        }
+      } catch (err) {
+        msgEl.innerHTML = '<div class="message error">Error: ' + err.message + '</div>';
+        btn.disabled = false;
+        btn.textContent = 'Subscribe to ' + (selectedPlan === 'pro_annual' ? 'Annual' : 'Monthly');
+      }
+    }
+
+    async function openPortal() {
+      try {
+        const res = await fetch(API + '/billing/portal', {
+          method: 'POST',
+          credentials: 'include'
+        });
+        const data = await res.json();
+
+        if (data.portal_url) {
+          window.location.href = data.portal_url;
+        } else {
+          alert(data.error || 'Failed to open billing portal');
+        }
+      } catch (err) {
+        alert('Error: ' + err.message);
+      }
+    }
+
+    async function toggleAutoRefill(enabled) {
+      const msgEl = document.getElementById('auto-refill-message');
+      try {
+        const res = await fetch(API + '/billing/auto-refill', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ enabled })
+        });
+        const data = await res.json();
+
+        if (data.error) {
+          msgEl.innerHTML = '<div class="message error">' + data.error + '</div>';
+          document.getElementById('auto-refill-toggle').checked = !enabled;
+        } else {
+          msgEl.innerHTML = '<div class="message success">Auto-refill ' + (enabled ? 'enabled' : 'disabled') + '</div>';
+          window.currentBilling.auto_refill = data;
+          setTimeout(() => { msgEl.innerHTML = ''; }, 2000);
+        }
+      } catch (err) {
+        msgEl.innerHTML = '<div class="message error">Error: ' + err.message + '</div>';
+        document.getElementById('auto-refill-toggle').checked = !enabled;
+      }
+    }
+
+    async function viewTransactions() {
+      const modal = document.createElement('div');
+      modal.className = 'modal-overlay';
+      modal.onclick = (e) => { if (e.target === modal) modal.remove(); };
+      modal.innerHTML = \`
+        <div class="modal" style="max-width:600px;">
+          <h2>Credit Transactions</h2>
+          <div id="transactions-content"><p style="color:#888;">Loading...</p></div>
+          <div class="modal-actions">
+            <button class="btn btn-secondary" onclick="this.closest('.modal-overlay').remove()">Close</button>
+          </div>
+        </div>
+      \`;
+      document.getElementById('modal-container').appendChild(modal);
+
+      try {
+        const res = await fetch(API + '/billing/transactions', { credentials: 'include' });
+        const data = await res.json();
+        const container = document.getElementById('transactions-content');
+
+        if (!data.transactions || data.transactions.length === 0) {
+          container.innerHTML = '<p style="color:#666;text-align:center;padding:2rem;">No transactions yet</p>';
+          return;
+        }
+
+        container.innerHTML = \`
+          <table style="width:100%;border-collapse:collapse;font-size:0.9rem;">
+            <thead>
+              <tr style="border-bottom:1px solid #333;">
+                <th style="text-align:left;padding:0.75rem;color:#666;">Date</th>
+                <th style="text-align:left;padding:0.75rem;color:#666;">Description</th>
+                <th style="text-align:right;padding:0.75rem;color:#666;">Credits</th>
+              </tr>
+            </thead>
+            <tbody>
+              \${data.transactions.map(tx => \`
+                <tr style="border-bottom:1px solid #222;">
+                  <td style="padding:0.75rem;color:#888;">\${new Date(tx.created_at).toLocaleDateString()}</td>
+                  <td style="padding:0.75rem;">\${tx.description || tx.type}</td>
+                  <td style="padding:0.75rem;text-align:right;color:#27ca40;font-weight:600;">+\${tx.amount.toLocaleString()}</td>
+                </tr>
+              \`).join('')}
+            </tbody>
+          </table>
+        \`;
+      } catch (err) {
+        document.getElementById('transactions-content').innerHTML = '<div class="message error">Error: ' + err.message + '</div>';
       }
     }
 
