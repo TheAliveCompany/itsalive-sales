@@ -302,3 +302,16 @@ CREATE INDEX IF NOT EXISTS idx_ai_usage_user ON ai_usage(app_subdomain, user_id,
 CREATE INDEX IF NOT EXISTS idx_og_routes_subdomain ON og_routes(app_subdomain);
 CREATE INDEX IF NOT EXISTS idx_user_activity_date ON user_activity(app_subdomain, date);
 CREATE INDEX IF NOT EXISTS idx_app_users_created ON app_users(app_subdomain, created_at);
+
+-- Upload usage tracking (for billing stats)
+CREATE TABLE IF NOT EXISTS upload_usage (
+  id TEXT PRIMARY KEY,
+  app_subdomain TEXT NOT NULL,
+  user_id TEXT,
+  filename TEXT NOT NULL,
+  content_type TEXT NOT NULL,
+  size INTEGER NOT NULL,
+  credits_used INTEGER DEFAULT 5,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_upload_usage_app ON upload_usage(app_subdomain, created_at);

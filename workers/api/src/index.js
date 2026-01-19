@@ -621,6 +621,13 @@ router.get('/owner/verify', async (request, env) => {
       'INSERT INTO owners (id, email) VALUES (?, ?)'
     ).bind(ownerId, email).run();
     owner = { id: ownerId };
+
+    // Give new owners 2500 free credits
+    const FREE_CREDITS = 2500;
+    await env.DB.prepare(`
+      INSERT INTO owner_credits (owner_id, balance, lifetime_purchased)
+      VALUES (?, ?, ?)
+    `).bind(ownerId, FREE_CREDITS, FREE_CREDITS).run();
   }
 
   // Create session token
@@ -2566,6 +2573,13 @@ router.get('/verify', async (request, env) => {
       'INSERT INTO owners (id, email) VALUES (?, ?)'
     ).bind(ownerId, pending.email).run();
     owner = { id: ownerId };
+
+    // Give new owners 2500 free credits
+    const FREE_CREDITS = 2500;
+    await env.DB.prepare(`
+      INSERT INTO owner_credits (owner_id, balance, lifetime_purchased)
+      VALUES (?, ?, ?)
+    `).bind(ownerId, FREE_CREDITS, FREE_CREDITS).run();
   }
 
   // Create or update app
@@ -4358,7 +4372,7 @@ router.post('/_itsalive/feedback', async (request, env) => {
 
 // ============ FILE UPLOAD ENDPOINTS ============
 
-// POST /uploads - Upload a file (requires login)
+// POST /uploads - Upload a file (requires login, costs 5 credits)
 router.post('/uploads', async (request, env) => {
   const subdomain = getSubdomain(request);
   if (!subdomain) {
@@ -4370,11 +4384,24 @@ router.post('/uploads', async (request, env) => {
     return new Response(JSON.stringify({ error: 'Login required' }), { status: 401 });
   }
 
+  // Check and deduct 5 credits for upload
+  const UPLOAD_COST = 5;
+  const creditResult = await checkAndDeductCredits(env, subdomain, UPLOAD_COST);
+  if (!creditResult.success) {
+    return new Response(JSON.stringify({
+      error: 'Insufficient credits',
+      balance: creditResult.balance,
+      required: UPLOAD_COST
+    }), { status: 402 });
+  }
+
   const formData = await request.formData();
   const file = formData.get('file');
   const isPublic = formData.get('public') !== 'false';
 
   if (!file) {
+    // Refund credits if no file
+    await refundCredits(env, subdomain, UPLOAD_COST);
     return new Response(JSON.stringify({ error: 'No file provided' }), { status: 400 });
   }
 
@@ -4384,12 +4411,16 @@ router.post('/uploads', async (request, env) => {
     'application/pdf', 'text/plain', 'text/csv'
   ];
   if (!allowedTypes.includes(file.type)) {
+    // Refund credits if invalid type
+    await refundCredits(env, subdomain, UPLOAD_COST);
     return new Response(JSON.stringify({ error: `File type not allowed. Allowed: ${allowedTypes.join(', ')}` }), { status: 400 });
   }
 
   // Size limit: 10MB for images, 25MB for PDFs
   const maxSize = file.type === 'application/pdf' ? 25 * 1024 * 1024 : 10 * 1024 * 1024;
   if (file.size > maxSize) {
+    // Refund credits if file too large
+    await refundCredits(env, subdomain, UPLOAD_COST);
     return new Response(JSON.stringify({ error: `File too large (max ${maxSize / 1024 / 1024}MB)` }), { status: 413 });
   }
 
@@ -4409,6 +4440,12 @@ router.post('/uploads', async (request, env) => {
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `).bind(id, subdomain, filename, file.name, file.type, file.size, user.id, isPublic ? 1 : 0).run();
 
+  // Track upload usage for stats
+  await env.DB.prepare(`
+    INSERT INTO upload_usage (id, app_subdomain, user_id, filename, content_type, size, credits_used)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).bind(id, subdomain, user.id, filename, file.type, file.size, UPLOAD_COST).run();
+
   // Build public URL
   const app = await env.DB.prepare('SELECT custom_domain FROM apps WHERE subdomain = ?').bind(subdomain).first();
   const baseUrl = app?.custom_domain ? `https://${app.custom_domain}` : `https://${subdomain}.itsalive.co`;
@@ -4418,7 +4455,8 @@ router.post('/uploads', async (request, env) => {
     url: `${baseUrl}/uploads/${user.id}/${filename}`,
     filename: file.name,
     content_type: file.type,
-    size: file.size
+    size: file.size,
+    credits_used: UPLOAD_COST
   };
 });
 
@@ -6129,6 +6167,12 @@ router.get('/stats/summary', async (request, env) => {
     FROM ai_usage WHERE app_subdomain = ? AND created_at >= ?
   `).bind(subdomain, monthAgo).first();
 
+  // Upload usage this month
+  const uploadUsageResult = await env.DB.prepare(`
+    SELECT COUNT(*) as uploads, COALESCE(SUM(credits_used), 0) as credits, COALESCE(SUM(size), 0) as bytes
+    FROM upload_usage WHERE app_subdomain = ? AND created_at >= ?
+  `).bind(subdomain, monthAgo).first();
+
   // Storage stats
   const storageResult = await env.DB.prepare(`
     SELECT COUNT(*) as files, COALESCE(SUM(size), 0) as bytes
@@ -6196,6 +6240,11 @@ router.get('/stats/summary', async (request, env) => {
     ai: {
       requests_this_month: aiUsageResult?.requests || 0,
       credits_used_this_month: aiUsageResult?.credits || 0,
+    },
+    uploads: {
+      count_this_month: uploadUsageResult?.uploads || 0,
+      credits_used_this_month: uploadUsageResult?.credits || 0,
+      bytes_this_month: uploadUsageResult?.bytes || 0,
     },
     storage: {
       files: storageResult?.files || 0,
@@ -6453,6 +6502,77 @@ router.get('/stats/ai', async (request, env) => {
     daily_usage: usageOverTime.results,
     by_feature: byFeature.results,
     data: byProviderTier.results,
+  };
+});
+
+// GET /stats/uploads - Upload usage over time
+router.get('/stats/uploads', async (request, env) => {
+  const url = new URL(request.url);
+  const deploy_token = url.searchParams.get('deploy_token');
+  const querySubdomain = url.searchParams.get('subdomain');
+  const days = Math.min(parseInt(url.searchParams.get('days') || '30'), 90);
+
+  const originSubdomain = getSubdomain(request);
+  const subdomain = querySubdomain || (originSubdomain !== 'dashboard' ? originSubdomain : null);
+  if (!subdomain) {
+    return new Response(JSON.stringify({ error: 'Subdomain required' }), { status: 400 });
+  }
+
+  const user = await getSession(request, env);
+  const ownerSession = await getOwnerSession(request, env);
+  const isOwner = (user && await isAppOwner(env, subdomain, user.email)) ||
+                  (ownerSession && await isAppOwner(env, subdomain, ownerSession.email));
+  const validToken = deploy_token && await validateDeployToken(env, subdomain, deploy_token);
+
+  if (!isOwner && !validToken) {
+    return new Response(JSON.stringify({ error: 'Not authorized' }), { status: 403 });
+  }
+
+  const startDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+
+  // Upload usage over time
+  const usageOverTime = await env.DB.prepare(`
+    SELECT date(created_at) as date,
+           COUNT(*) as uploads,
+           SUM(credits_used) as credits,
+           SUM(size) as bytes
+    FROM upload_usage
+    WHERE app_subdomain = ? AND created_at >= ?
+    GROUP BY date(created_at)
+    ORDER BY date
+  `).bind(subdomain, startDate).all();
+
+  // Usage by content type
+  const byContentType = await env.DB.prepare(`
+    SELECT content_type,
+           COUNT(*) as uploads,
+           SUM(credits_used) as credits,
+           SUM(size) as bytes
+    FROM upload_usage
+    WHERE app_subdomain = ? AND created_at >= ?
+    GROUP BY content_type
+    ORDER BY uploads DESC
+  `).bind(subdomain, startDate).all();
+
+  // Total for period
+  const totals = await env.DB.prepare(`
+    SELECT COUNT(*) as uploads,
+           COALESCE(SUM(credits_used), 0) as credits,
+           COALESCE(SUM(size), 0) as bytes
+    FROM upload_usage
+    WHERE app_subdomain = ? AND created_at >= ?
+  `).bind(subdomain, startDate).first();
+
+  return {
+    period_days: days,
+    totals: {
+      uploads: totals?.uploads || 0,
+      credits: totals?.credits || 0,
+      bytes: totals?.bytes || 0,
+      mb: Math.round((totals?.bytes || 0) / 1024 / 1024 * 100) / 100,
+    },
+    daily_usage: usageOverTime.results,
+    by_content_type: byContentType.results,
   };
 });
 
