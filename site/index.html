@@ -20,8 +20,162 @@
   <meta name="twitter:description" content="Everything you need to ship your Claude Code project - auth, database, and hosting in one command.">
   <meta name="twitter:image" content="https://itsalive.co/og-image.png">
   <link rel="stylesheet" href="/styles.css">
+  <style>
+    /* Launch Banner */
+    .launch-banner {
+      background: linear-gradient(90deg, #7b2dff 0%, #00d4ff 50%, #ff2d7b 100%);
+      color: #fff;
+      text-align: center;
+      padding: 0.75rem 1rem;
+      font-size: 0.95rem;
+      font-weight: 500;
+    }
+    .launch-banner code {
+      background: rgba(0,0,0,0.3);
+      padding: 0.2rem 0.6rem;
+      border-radius: 4px;
+      font-family: 'SF Mono', Monaco, monospace;
+      font-weight: 700;
+      color: #fff;
+    }
+    .launch-banner a {
+      color: #fff;
+      text-decoration: underline;
+    }
+
+    /* Social Proof Counter */
+    .social-proof {
+      padding: 2rem;
+      text-align: center;
+      border-bottom: 1px solid #151515;
+    }
+    .counter {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.25rem;
+    }
+    .counter-number {
+      font-size: 3rem;
+      font-weight: 800;
+      background: linear-gradient(135deg, #00d4ff 0%, #7b2dff 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .counter-label {
+      color: #666;
+      font-size: 0.9rem;
+    }
+
+    /* Showcase Section */
+    .showcase {
+      padding: 4rem 2rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 3rem;
+      flex-wrap: wrap;
+      border-bottom: 1px solid #151515;
+    }
+    .showcase-browser {
+      width: 100%;
+      max-width: 500px;
+      background: #111;
+      border: 1px solid #222;
+      border-radius: 12px;
+      overflow: hidden;
+    }
+    .browser-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 12px 16px;
+      background: #0d0d0d;
+      border-bottom: 1px solid #222;
+    }
+    .browser-btn {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+    }
+    .browser-btn.red { background: #ff5f57; }
+    .browser-btn.yellow { background: #ffbd2e; }
+    .browser-btn.green { background: #28ca41; }
+    .browser-url {
+      margin-left: auto;
+      color: #666;
+      font-size: 0.85rem;
+      font-family: 'SF Mono', Monaco, monospace;
+    }
+    .browser-content {
+      width: 100%;
+      height: 300px;
+      border: none;
+      background: #0a0a0a;
+    }
+    .showcase-info {
+      max-width: 350px;
+    }
+    .showcase-info h3 {
+      font-size: 1.5rem;
+      margin-bottom: 0.75rem;
+    }
+    .showcase-info p {
+      color: #888;
+      line-height: 1.6;
+      margin-bottom: 1.5rem;
+    }
+    .showcase-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.6rem 1.2rem;
+      background: transparent;
+      border: 1px solid #333;
+      color: #fff;
+      border-radius: 6px;
+      text-decoration: none;
+      font-size: 0.9rem;
+      transition: border-color 0.2s, background 0.2s;
+    }
+    .showcase-link:hover {
+      border-color: #00d4ff;
+      background: rgba(0, 212, 255, 0.1);
+    }
+
+    /* Trust Badges */
+    .trust-badges {
+      padding: 3rem 2rem;
+      text-align: center;
+      border-bottom: 1px solid #151515;
+    }
+    .trust-badges p.label {
+      color: #555;
+      font-size: 0.85rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      margin-bottom: 1.5rem;
+    }
+    .badges {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 2.5rem;
+      flex-wrap: wrap;
+      opacity: 0.6;
+    }
+    .badge-item {
+      color: #888;
+      font-size: 0.95rem;
+      font-weight: 500;
+    }
+  </style>
 </head>
 <body>
+  <div class="launch-banner">
+    🎉 <strong>Launch Day!</strong> First 100 users get 3 months of Pro FREE with code <code>letsgo</code> — <a href="https://dashboard.itsalive.co">Claim yours</a>
+  </div>
+
   <nav>
     <a href="/" class="nav-logo">itsalive.co</a>
     <div class="nav-links">
@@ -128,6 +282,56 @@
     </div>
   </section>
 
+  <section class="social-proof">
+    <div class="counter">
+      <span class="counter-number" id="sites-count">--</span>
+      <span class="counter-label">sites launched this week</span>
+    </div>
+    <script>
+      fetch('https://api.itsalive.co/stats/public').then(r => r.json()).then(data => {
+        document.getElementById('sites-count').textContent = data.sitesThisWeek || '10+';
+      }).catch(() => {
+        document.getElementById('sites-count').textContent = '10+';
+      });
+    </script>
+  </section>
+
+  <section class="showcase">
+    <div class="showcase-browser">
+      <div class="browser-header">
+        <div class="browser-btn red"></div>
+        <div class="browser-btn yellow"></div>
+        <div class="browser-btn green"></div>
+        <div class="browser-url">eat.itsalive.co</div>
+      </div>
+      <iframe src="https://eat.itsalive.co" class="browser-content" title="eat.itsalive.co example"></iframe>
+    </div>
+    <div class="showcase-info">
+      <h3>Built with itsalive.co</h3>
+      <p>A fully functional restaurant finder with auth, database, and AI-powered search. Deployed in seconds.</p>
+      <a href="https://eat.itsalive.co" target="_blank" class="showcase-link">
+        Visit Site
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
+          <polyline points="15 3 21 3 21 9"></polyline>
+          <line x1="10" y1="14" x2="21" y2="3"></line>
+        </svg>
+      </a>
+    </div>
+  </section>
+
+  <section class="trust-badges">
+    <p class="label">Powered by</p>
+    <div class="badges">
+      <span class="badge-item">☁️ Cloudflare</span>
+      <span class="badge-item">💳 Stripe</span>
+      <span class="badge-item">🤖 OpenAI</span>
+      <span class="badge-item">🧠 Anthropic</span>
+      <span class="badge-item">✨ Gemini</span>
+      <span class="badge-item">📧 Resend</span>
+    </div>
+  </section>
+
   <section class="features">
     <h2>Everything You Need, Built In</h2>
     <p class="subtitle">Integrates with Claude Code to give it superpowers. No more plumbing, just vibe and watch the magic.</p>
@@ -191,9 +395,10 @@
         <ul class="plan-features">
           <li>Up to 10 sites</li>
           <li>Auth, database, hosting</li>
-          <li>2,500 credits included</li>
           <li>Basic analytics</li>
-          <li>Image optimization</li>
+          <li>100 emails/day</li>
+          <li>AI: pay per use <a href="/guides/credits/" style="color:#00d4ff;font-size:0.85em;">(What are credits?)</a></li>
+          <li>10,000 visitors/month</li>
         </ul>
         <button class="plan-cta secondary" onclick="navigator.clipboard.writeText('npx itsalive-co')">Get Started Free</button>
       </div>
@@ -203,12 +408,14 @@
         <p class="plan-desc">For apps that are ready for the real world</p>
         <ul class="plan-features">
           <li>Custom domain</li>
-          <li>20,000 credits included</li>
-          <li>Full analytics dashboard</li>
-          <li>Priority support</li>
           <li>Staging environment</li>
+          <li>Full analytics dashboard</li>
+          <li>1,000 emails/day</li>
+          <li>AI: pay per use <a href="/guides/credits/" style="color:#00d4ff;font-size:0.85em;">(What are credits?)</a></li>
+          <li>100,000 visitors/month</li>
+          <li>Priority support</li>
         </ul>
-        <button class="plan-cta">Coming Soon</button>
+        <a href="https://dashboard.itsalive.co" class="plan-cta" style="display:inline-block;text-decoration:none;">Upgrade to Pro</a>
       </div>
       <div class="plan">
         <div class="plan-name">Studio</div>
@@ -216,25 +423,14 @@
         <p class="plan-desc">For agencies and studios shipping client work</p>
         <ul class="plan-features">
           <li>Up to 100 sites</li>
-          <li>200,000 credits included</li>
-          <li>White-label subdomain</li>
+          <li>White-label subdomain (*.yourstudio.com)</li>
           <li>Custom domains included</li>
+          <li>Staging environments</li>
+          <li>10,000 emails/day</li>
           <li>Everything in Pro</li>
         </ul>
         <button class="plan-cta">Coming Soon</button>
       </div>
-    </div>
-    <div class="credits-info">
-      <h3>What are credits?</h3>
-      <p>Credits are used for AI, uploads, and email. Here's what things cost:</p>
-      <div class="credits-table">
-        <div class="credit-row"><span>File upload</span><span>5 credits</span></div>
-        <div class="credit-row"><span>AI chat (good)</span><span>~10-50 credits</span></div>
-        <div class="credit-row"><span>AI chat (best)</span><span>~50-200 credits</span></div>
-        <div class="credit-row"><span>AI image generation</span><span>50-150 credits</span></div>
-        <div class="credit-row"><span>Email sent</span><span>1 credit</span></div>
-      </div>
-      <p class="credits-note">Need more? Add credits anytime at $10 per 10,000 credits.</p>
     </div>
   </section>
 

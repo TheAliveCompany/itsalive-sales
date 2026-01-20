@@ -886,6 +886,295 @@ router.get('/stats/public', async (request, env) => {
   });
 });
 
+// ============ RESELLER PROGRAM ============
+
+// Helper to generate reseller code
+function generateResellerCode(prefix = '') {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // Removed confusing chars
+  let code = prefix ? prefix.toUpperCase() + '-' : '';
+  for (let i = 0; i < 6; i++) {
+    code += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return code;
+}
+
+// POST /reseller/apply - Apply to become a reseller
+router.post('/reseller/apply', async (request, env) => {
+  const owner = await getOwnerSession(request, env);
+  if (!owner) {
+    return new Response(JSON.stringify({ error: 'Not logged in' }), { status: 401 });
+  }
+
+  const body = await request.json();
+  const { company_name, payout_email } = body;
+
+  if (!payout_email) {
+    return new Response(JSON.stringify({ error: 'Payout email required' }), { status: 400 });
+  }
+
+  // Check if already a reseller
+  const existing = await env.DB.prepare(
+    'SELECT id FROM resellers WHERE owner_id = ?'
+  ).bind(owner.owner_id).first();
+
+  if (existing) {
+    return new Response(JSON.stringify({ error: 'Already a reseller' }), { status: 400 });
+  }
+
+  const resellerId = crypto.randomUUID();
+  await env.DB.prepare(`
+    INSERT INTO resellers (id, owner_id, company_name, payout_email, status)
+    VALUES (?, ?, ?, ?, 'active')
+  `).bind(resellerId, owner.owner_id, company_name || null, payout_email).run();
+
+  return new Response(JSON.stringify({
+    success: true,
+    reseller_id: resellerId,
+    message: 'Welcome to the reseller program!'
+  }));
+});
+
+// GET /reseller/me - Get reseller profile and stats
+router.get('/reseller/me', async (request, env) => {
+  const owner = await getOwnerSession(request, env);
+  if (!owner) {
+    return new Response(JSON.stringify({ error: 'Not logged in' }), { status: 401 });
+  }
+
+  const reseller = await env.DB.prepare(`
+    SELECT r.*,
+           (SELECT COUNT(*) FROM reseller_codes WHERE reseller_id = r.id) as codes_count,
+           (SELECT COUNT(*) FROM reseller_referrals WHERE reseller_id = r.id) as referrals_count
+    FROM resellers r
+    WHERE r.owner_id = ?
+  `).bind(owner.owner_id).first();
+
+  if (!reseller) {
+    return new Response(JSON.stringify({ error: 'Not a reseller', is_reseller: false }), { status: 404 });
+  }
+
+  return new Response(JSON.stringify({
+    is_reseller: true,
+    reseller: {
+      id: reseller.id,
+      company_name: reseller.company_name,
+      payout_email: reseller.payout_email,
+      status: reseller.status,
+      total_earned: reseller.total_earned,
+      total_paid: reseller.total_paid,
+      pending_payout: reseller.pending_payout,
+      codes_count: reseller.codes_count,
+      referrals_count: reseller.referrals_count,
+      created_at: reseller.created_at
+    }
+  }));
+});
+
+// POST /reseller/codes - Generate a new coupon code
+router.post('/reseller/codes', async (request, env) => {
+  const owner = await getOwnerSession(request, env);
+  if (!owner) {
+    return new Response(JSON.stringify({ error: 'Not logged in' }), { status: 401 });
+  }
+
+  const reseller = await env.DB.prepare(
+    'SELECT id, status FROM resellers WHERE owner_id = ?'
+  ).bind(owner.owner_id).first();
+
+  if (!reseller) {
+    return new Response(JSON.stringify({ error: 'Not a reseller' }), { status: 403 });
+  }
+
+  if (reseller.status !== 'active') {
+    return new Response(JSON.stringify({ error: 'Reseller account is not active' }), { status: 403 });
+  }
+
+  const body = await request.json();
+  const { discount_type, prefix } = body;
+
+  // Validate discount type
+  const validTypes = ['free_1month', 'half_3months', 'discount_year'];
+  if (!validTypes.includes(discount_type)) {
+    return new Response(JSON.stringify({
+      error: 'Invalid discount type. Must be: free_1month, half_3months, or discount_year'
+    }), { status: 400 });
+  }
+
+  // Generate unique code
+  let code;
+  let attempts = 0;
+  while (attempts < 10) {
+    code = generateResellerCode(prefix);
+    const exists = await env.DB.prepare(
+      'SELECT code FROM reseller_codes WHERE code = ?'
+    ).bind(code).first();
+    if (!exists) break;
+    attempts++;
+  }
+
+  if (attempts >= 10) {
+    return new Response(JSON.stringify({ error: 'Failed to generate unique code' }), { status: 500 });
+  }
+
+  await env.DB.prepare(`
+    INSERT INTO reseller_codes (code, reseller_id, discount_type)
+    VALUES (?, ?, ?)
+  `).bind(code, reseller.id, discount_type).run();
+
+  // Human-readable discount descriptions
+  const discountDescriptions = {
+    'free_1month': 'Free for the first month',
+    'half_3months': '50% off for the first 3 months',
+    'discount_year': '20% off for the first year'
+  };
+
+  return new Response(JSON.stringify({
+    success: true,
+    code: code,
+    discount_type: discount_type,
+    description: discountDescriptions[discount_type]
+  }));
+});
+
+// GET /reseller/codes - List reseller's codes
+router.get('/reseller/codes', async (request, env) => {
+  const owner = await getOwnerSession(request, env);
+  if (!owner) {
+    return new Response(JSON.stringify({ error: 'Not logged in' }), { status: 401 });
+  }
+
+  const reseller = await env.DB.prepare(
+    'SELECT id FROM resellers WHERE owner_id = ?'
+  ).bind(owner.owner_id).first();
+
+  if (!reseller) {
+    return new Response(JSON.stringify({ error: 'Not a reseller' }), { status: 403 });
+  }
+
+  const codes = await env.DB.prepare(`
+    SELECT code, discount_type, uses_count, status, created_at
+    FROM reseller_codes
+    WHERE reseller_id = ?
+    ORDER BY created_at DESC
+  `).bind(reseller.id).all();
+
+  return new Response(JSON.stringify({ codes: codes.results || [] }));
+});
+
+// DELETE /reseller/codes/:code - Disable a code
+router.delete('/reseller/codes/:code', async (request, env) => {
+  const owner = await getOwnerSession(request, env);
+  if (!owner) {
+    return new Response(JSON.stringify({ error: 'Not logged in' }), { status: 401 });
+  }
+
+  const reseller = await env.DB.prepare(
+    'SELECT id FROM resellers WHERE owner_id = ?'
+  ).bind(owner.owner_id).first();
+
+  if (!reseller) {
+    return new Response(JSON.stringify({ error: 'Not a reseller' }), { status: 403 });
+  }
+
+  const code = request.params.code;
+  const result = await env.DB.prepare(`
+    UPDATE reseller_codes SET status = 'disabled'
+    WHERE code = ? AND reseller_id = ?
+  `).bind(code, reseller.id).run();
+
+  if (result.meta.changes === 0) {
+    return new Response(JSON.stringify({ error: 'Code not found' }), { status: 404 });
+  }
+
+  return new Response(JSON.stringify({ success: true }));
+});
+
+// GET /reseller/referrals - List referrals and commissions
+router.get('/reseller/referrals', async (request, env) => {
+  const owner = await getOwnerSession(request, env);
+  if (!owner) {
+    return new Response(JSON.stringify({ error: 'Not logged in' }), { status: 401 });
+  }
+
+  const reseller = await env.DB.prepare(
+    'SELECT id FROM resellers WHERE owner_id = ?'
+  ).bind(owner.owner_id).first();
+
+  if (!reseller) {
+    return new Response(JSON.stringify({ error: 'Not a reseller' }), { status: 403 });
+  }
+
+  const referrals = await env.DB.prepare(`
+    SELECT rr.id, rr.reseller_code, rr.app_subdomain, rr.discount_type,
+           rr.tracking_ends_at, rr.total_paid, rr.commission_earned, rr.created_at,
+           o.email as customer_email
+    FROM reseller_referrals rr
+    JOIN owners o ON rr.owner_id = o.id
+    WHERE rr.reseller_id = ?
+    ORDER BY rr.created_at DESC
+  `).bind(reseller.id).all();
+
+  return new Response(JSON.stringify({ referrals: referrals.results || [] }));
+});
+
+// GET /reseller/payouts - List payout history
+router.get('/reseller/payouts', async (request, env) => {
+  const owner = await getOwnerSession(request, env);
+  if (!owner) {
+    return new Response(JSON.stringify({ error: 'Not logged in' }), { status: 401 });
+  }
+
+  const reseller = await env.DB.prepare(
+    'SELECT id FROM resellers WHERE owner_id = ?'
+  ).bind(owner.owner_id).first();
+
+  if (!reseller) {
+    return new Response(JSON.stringify({ error: 'Not a reseller' }), { status: 403 });
+  }
+
+  const payouts = await env.DB.prepare(`
+    SELECT id, amount, method, status, notes, paid_at, created_at
+    FROM reseller_payouts
+    WHERE reseller_id = ?
+    ORDER BY created_at DESC
+  `).bind(reseller.id).all();
+
+  return new Response(JSON.stringify({ payouts: payouts.results || [] }));
+});
+
+// GET /reseller/validate/:code - Validate a reseller code (public, for checkout)
+router.get('/reseller/validate/:code', async (request, env) => {
+  const code = request.params.code.toUpperCase();
+
+  const resellerCode = await env.DB.prepare(`
+    SELECT rc.code, rc.discount_type, rc.status, r.status as reseller_status
+    FROM reseller_codes rc
+    JOIN resellers r ON rc.reseller_id = r.id
+    WHERE rc.code = ?
+  `).bind(code).first();
+
+  if (!resellerCode) {
+    return new Response(JSON.stringify({ valid: false, error: 'Code not found' }), { status: 404 });
+  }
+
+  if (resellerCode.status !== 'active' || resellerCode.reseller_status !== 'active') {
+    return new Response(JSON.stringify({ valid: false, error: 'Code is not active' }), { status: 400 });
+  }
+
+  const discountDescriptions = {
+    'free_1month': 'Free for the first month',
+    'half_3months': '50% off for the first 3 months',
+    'discount_year': '20% off for the first year'
+  };
+
+  return new Response(JSON.stringify({
+    valid: true,
+    code: resellerCode.code,
+    discount_type: resellerCode.discount_type,
+    description: discountDescriptions[resellerCode.discount_type]
+  }));
+});
+
 // Admin emails that can access /admin endpoints
 const ADMIN_EMAILS = ['s@swh.me', 'sam@itsalive.co', 'melih@itsalive.co'];
 
@@ -1755,7 +2044,7 @@ router.post('/billing/setup-intent', async (request, env) => {
   }
 
   const body = await request.json();
-  const { plan, site } = body;
+  const { plan, site, reseller_code } = body;
 
   if (!plan || !['pro_monthly', 'pro_annual'].includes(plan)) {
     return new Response(JSON.stringify({ error: 'Invalid plan. Choose pro_monthly or pro_annual' }), { status: 400 });
@@ -1804,6 +2093,21 @@ router.post('/billing/setup-intent', async (request, env) => {
     }), { status: 400 });
   }
 
+  // Validate reseller code if provided
+  let validatedResellerCode = null;
+  if (reseller_code) {
+    const rc = await env.DB.prepare(`
+      SELECT rc.code, rc.discount_type, rc.reseller_id, rc.status, r.status as reseller_status
+      FROM reseller_codes rc
+      JOIN resellers r ON rc.reseller_id = r.id
+      WHERE rc.code = ?
+    `).bind(reseller_code.toUpperCase()).first();
+
+    if (rc && rc.status === 'active' && rc.reseller_status === 'active') {
+      validatedResellerCode = rc;
+    }
+  }
+
   // Create SetupIntent with automatic payment methods
   const params = new URLSearchParams();
   params.append('customer', stripeCustomerId);
@@ -1813,6 +2117,11 @@ router.post('/billing/setup-intent', async (request, env) => {
   params.append('metadata[owner_id]', owner.owner_id);
   params.append('metadata[plan]', plan);
   params.append('metadata[site]', site);
+  if (validatedResellerCode) {
+    params.append('metadata[reseller_code]', validatedResellerCode.code);
+    params.append('metadata[reseller_id]', validatedResellerCode.reseller_id);
+    params.append('metadata[discount_type]', validatedResellerCode.discount_type);
+  }
 
   const response = await fetch('https://api.stripe.com/v1/setup_intents', {
     method: 'POST',
