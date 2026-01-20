@@ -28,6 +28,13 @@ export default {
         });
       }
 
+      // Admin page
+      if (url.pathname === '/admin' || url.pathname === '/admin/') {
+        return new Response(adminPage(), {
+          headers: { 'content-type': 'text/html; charset=utf-8' },
+        });
+      }
+
       // Main dashboard
       return new Response(dashboardPage(), {
         headers: { 'content-type': 'text/html' },
@@ -59,6 +66,13 @@ export default {
       // Custom domain setup docs
       if (url.pathname === '/docs/custom-domains') {
         return new Response(customDomainsPage(), {
+          headers: { 'content-type': 'text/html' },
+        });
+      }
+
+      // Credits and pricing docs
+      if (url.pathname === '/docs/credits') {
+        return new Response(creditsPage(), {
           headers: { 'content-type': 'text/html' },
         });
       }
@@ -1292,6 +1306,10 @@ function dashboardPage() {
     .app-card:hover {
       border-color: rgba(255,255,255,0.15);
     }
+    .add-site-card:hover {
+      border-color: #00d4ff !important;
+      background: rgba(0,212,255,0.05);
+    }
     .app-info h3 {
       font-size: 1.1rem;
       margin-bottom: 0.25rem;
@@ -1713,7 +1731,7 @@ function dashboardPage() {
       const billing = window.currentBilling;
       const subscriptions = billing?.subscriptions || {};
 
-      container.innerHTML = data.apps.map(app => {
+      const appsHtml = data.apps.map(app => {
         const hasSiteSub = !!subscriptions[app.subdomain];
         const siteSub = subscriptions[app.subdomain];
         const planBadge = siteSub ? (siteSub.plan === 'pro_annual' ? 'Pro Annual' : 'Pro Monthly') : '';
@@ -1738,6 +1756,15 @@ function dashboardPage() {
           </div>
         </div>
       \`;}).join('');
+
+      // Add "Add Site" card at the end
+      const addSiteCard = \`
+        <div class="app-card add-site-card" onclick="showAddSiteModal()" style="cursor:pointer;border:2px dashed #333;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:180px;transition:border-color 0.2s,background 0.2s;">
+          <div style="font-size:3rem;color:#444;margin-bottom:0.5rem;">+</div>
+          <div style="color:#888;font-weight:600;">Add Site</div>
+        </div>
+      \`;
+      container.innerHTML = appsHtml + addSiteCard;
     }
 
     async function openSettings(subdomain) {
@@ -2340,6 +2367,32 @@ function dashboardPage() {
     }
 
     // ============ BILLING FUNCTIONS ============
+
+    function showAddSiteModal() {
+      const container = document.getElementById('modal-container');
+      container.innerHTML = \`
+        <div class="modal-overlay" onclick="if(event.target===this)closeModal()">
+          <div class="modal">
+            <div class="modal-header">
+              <h2>Add a New Site</h2>
+              <button class="modal-close" onclick="closeModal()">&times;</button>
+            </div>
+            <div class="modal-body" style="text-align:center;padding:2rem;">
+              <div style="font-size:3rem;margin-bottom:1rem;">🚀</div>
+              <p style="color:#888;margin-bottom:1.5rem;">Deploy your vibe-coded project in seconds</p>
+              <div style="background:#111;border:1px solid #222;border-radius:8px;padding:1.5rem;margin-bottom:1.5rem;">
+                <p style="color:#888;font-size:0.9rem;margin-bottom:1rem;">In your project directory, run:</p>
+                <code style="display:block;background:#0a0a0a;padding:1rem;border-radius:6px;font-size:1.1rem;color:#00d4ff;cursor:pointer;" onclick="navigator.clipboard.writeText('npx itsalive-co');this.textContent='Copied!';setTimeout(()=>this.textContent='npx itsalive-co',1500)">npx itsalive-co</code>
+              </div>
+              <div style="background:rgba(123,45,255,0.1);border:1px solid rgba(123,45,255,0.2);border-radius:8px;padding:1rem;text-align:left;">
+                <p style="color:#7b2dff;font-weight:600;margin-bottom:0.5rem;">💡 Tip</p>
+                <p style="color:#888;font-size:0.9rem;margin:0;">Make sure to use the same email (<strong style="color:#fff;">\${currentUser.email}</strong>) when deploying to add it to this account.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      \`;
+    }
 
     function showBillingSuccess() {
       const banner = document.createElement('div');
@@ -3884,6 +3937,288 @@ function customDomainsPage() {
 </html>`;
 }
 
+function creditsPage() {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Credits & Pricing - itsalive.co</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      background: #0a0a0b;
+      color: #e0e0e0;
+      line-height: 1.7;
+      min-height: 100vh;
+    }
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 1.5rem 2rem;
+      border-bottom: 1px solid #1a1a1a;
+      background: #0d0d0d;
+    }
+    .logo {
+      font-size: 1.5rem;
+      font-weight: 800;
+      background: linear-gradient(135deg, #00d4ff 0%, #7b2dff 50%, #ff2d7b 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      text-decoration: none;
+    }
+    .container {
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 3rem 2rem;
+    }
+    h1 {
+      font-size: 2.5rem;
+      margin-bottom: 1rem;
+      color: #fff;
+    }
+    .subtitle {
+      font-size: 1.2rem;
+      color: #888;
+      margin-bottom: 3rem;
+    }
+    h2 {
+      font-size: 1.5rem;
+      color: #fff;
+      margin: 2.5rem 0 1rem;
+      padding-top: 1.5rem;
+      border-top: 1px solid #222;
+    }
+    h2:first-of-type {
+      border-top: none;
+      padding-top: 0;
+    }
+    p {
+      margin-bottom: 1rem;
+      color: #b0b0b0;
+    }
+    code {
+      background: #1a1a1a;
+      padding: 0.2rem 0.5rem;
+      border-radius: 4px;
+      font-family: 'SF Mono', Monaco, monospace;
+      font-size: 0.9rem;
+      color: #00d4ff;
+    }
+    .pricing-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 1.5rem 0;
+    }
+    .pricing-table th, .pricing-table td {
+      padding: 1rem;
+      text-align: left;
+      border-bottom: 1px solid #222;
+    }
+    .pricing-table th {
+      color: #888;
+      font-weight: 500;
+      font-size: 0.85rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .pricing-table td {
+      color: #e0e0e0;
+    }
+    .pricing-table tr:hover td {
+      background: rgba(0, 212, 255, 0.05);
+    }
+    .model-name {
+      font-weight: 600;
+      color: #fff;
+    }
+    .provider {
+      font-size: 0.85rem;
+      color: #666;
+    }
+    .tier-badge {
+      display: inline-block;
+      padding: 0.25rem 0.5rem;
+      border-radius: 4px;
+      font-size: 0.8rem;
+      font-weight: 500;
+    }
+    .tier-good { background: #1a3a1a; color: #4ade80; }
+    .tier-best { background: #3a2a1a; color: #fbbf24; }
+    .callout {
+      background: #111;
+      border-left: 3px solid #00d4ff;
+      padding: 1rem 1.5rem;
+      margin: 1.5rem 0;
+      border-radius: 0 8px 8px 0;
+    }
+    .callout-title {
+      font-weight: 600;
+      color: #00d4ff;
+      margin-bottom: 0.5rem;
+    }
+    .btn {
+      display: inline-block;
+      padding: 0.75rem 1.5rem;
+      background: linear-gradient(135deg, #00d4ff 0%, #7b2dff 100%);
+      color: #fff;
+      text-decoration: none;
+      border-radius: 8px;
+      font-weight: 600;
+      margin-top: 1rem;
+    }
+    .credits-info {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 1.5rem;
+      margin: 2rem 0;
+    }
+    .credits-card {
+      background: #111;
+      border: 1px solid #222;
+      border-radius: 12px;
+      padding: 1.5rem;
+    }
+    .credits-card h3 {
+      color: #fff;
+      margin-bottom: 0.5rem;
+    }
+    .credits-card .amount {
+      font-size: 2rem;
+      font-weight: 700;
+      color: #00d4ff;
+    }
+    .credits-card .price {
+      color: #888;
+      font-size: 0.9rem;
+    }
+  </style>
+</head>
+<body>
+  <header class="header">
+    <a href="/" class="logo">It's Alive!</a>
+    <a href="/dashboard" style="color: #888; text-decoration: none;">Dashboard</a>
+  </header>
+
+  <div class="container">
+    <h1>AI Credits & Pricing</h1>
+    <p class="subtitle">Simple, transparent pricing for AI-powered features</p>
+
+    <h2>How Credits Work</h2>
+    <p>Credits are the universal currency for AI features on itsalive.co. Every AI request consumes credits based on the model used and token count. New accounts start with <strong>50,000 free credits</strong> to get you started.</p>
+
+    <div class="callout">
+      <div class="callout-title">Simple Math</div>
+      <p style="margin-bottom:0;">1 credit = approximately 1 token. Most short conversations use 500-2,000 credits. A typical chatbot interaction costs about $0.001-0.01.</p>
+    </div>
+
+    <h2>Available Models</h2>
+    <p>Choose the right model for your use case. "Good" tier models are fast and affordable, "Best" tier models are more capable but cost more.</p>
+
+    <table class="pricing-table">
+      <thead>
+        <tr>
+          <th>Model</th>
+          <th>Tier</th>
+          <th>Input (per 1M tokens)</th>
+          <th>Output (per 1M tokens)</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>
+            <div class="model-name">GPT-4o mini</div>
+            <div class="provider">OpenAI</div>
+          </td>
+          <td><span class="tier-badge tier-good">Good</span></td>
+          <td>$0.15 (150 credits)</td>
+          <td>$0.60 (600 credits)</td>
+        </tr>
+        <tr>
+          <td>
+            <div class="model-name">Claude 3.5 Haiku</div>
+            <div class="provider">Anthropic</div>
+          </td>
+          <td><span class="tier-badge tier-good">Good</span></td>
+          <td>$1.00 (1,000 credits)</td>
+          <td>$5.00 (5,000 credits)</td>
+        </tr>
+        <tr>
+          <td>
+            <div class="model-name">Gemini 2.0 Flash</div>
+            <div class="provider">Google</div>
+          </td>
+          <td><span class="tier-badge tier-good">Good</span></td>
+          <td>$0.10 (100 credits)</td>
+          <td>$0.40 (400 credits)</td>
+        </tr>
+        <tr>
+          <td>
+            <div class="model-name">GPT-4o</div>
+            <div class="provider">OpenAI</div>
+          </td>
+          <td><span class="tier-badge tier-best">Best</span></td>
+          <td>$2.50 (2,500 credits)</td>
+          <td>$10.00 (10,000 credits)</td>
+        </tr>
+        <tr>
+          <td>
+            <div class="model-name">Claude 3.5 Sonnet</div>
+            <div class="provider">Anthropic</div>
+          </td>
+          <td><span class="tier-badge tier-best">Best</span></td>
+          <td>$3.00 (3,000 credits)</td>
+          <td>$15.00 (15,000 credits)</td>
+        </tr>
+        <tr>
+          <td>
+            <div class="model-name">Gemini 1.5 Pro</div>
+            <div class="provider">Google</div>
+          </td>
+          <td><span class="tier-badge tier-best">Best</span></td>
+          <td>$1.25 (1,250 credits)</td>
+          <td>$5.00 (5,000 credits)</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h2>Credit Packages</h2>
+    <p>Buy credits in bulk at a fixed rate of <strong>$1 = 1,000 credits</strong>.</p>
+
+    <div class="credits-info">
+      <div class="credits-card">
+        <h3>Starter</h3>
+        <div class="amount">50,000</div>
+        <div class="price">$50</div>
+      </div>
+      <div class="credits-card">
+        <h3>Growth</h3>
+        <div class="amount">200,000</div>
+        <div class="price">$200</div>
+      </div>
+      <div class="credits-card">
+        <h3>Scale</h3>
+        <div class="amount">500,000</div>
+        <div class="price">$500</div>
+      </div>
+    </div>
+
+    <h2>Auto-Refill</h2>
+    <p>Never run out of credits. Enable auto-refill in your dashboard to automatically purchase more credits when your balance drops below a threshold.</p>
+
+    <div class="callout">
+      <div class="callout-title">Pro Tip</div>
+      <p style="margin-bottom:0;">For most apps, the "good" tier models work great and are much more affordable. Reserve "best" tier for complex reasoning tasks.</p>
+    </div>
+
+    <a href="/dashboard" class="btn">Manage Credits</a>
+  </div>
+</body>
+</html>`;
+}
+
 function landingPage() {
   return `<!DOCTYPE html>
 <html lang="en">
@@ -4433,9 +4768,148 @@ function landingPage() {
     footer a:hover {
       color: #00d4ff;
     }
+
+    /* Social Proof */
+    .social-proof {
+      text-align: center;
+      padding: 2rem;
+      background: rgba(0, 212, 255, 0.03);
+      border-top: 1px solid rgba(0, 212, 255, 0.1);
+      border-bottom: 1px solid rgba(0, 212, 255, 0.1);
+    }
+    .social-proof .counter {
+      font-size: 2rem;
+      font-weight: 800;
+      background: linear-gradient(135deg, #00d4ff 0%, #7b2dff 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .social-proof p {
+      color: #888;
+      font-size: 1.1rem;
+    }
+
+    /* Showcase */
+    .showcase {
+      padding: 5rem 2rem;
+      text-align: center;
+    }
+    .showcase h2 {
+      font-size: 2rem;
+      margin-bottom: 1rem;
+    }
+    .showcase .subtitle {
+      color: #777;
+      margin-bottom: 3rem;
+      font-size: 1.1rem;
+    }
+    .showcase-item {
+      max-width: 800px;
+      margin: 0 auto;
+      background: rgba(255,255,255,0.02);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 16px;
+      overflow: hidden;
+      transition: border-color 0.3s;
+    }
+    .showcase-item:hover {
+      border-color: rgba(0, 212, 255, 0.3);
+    }
+    .showcase-preview {
+      width: 100%;
+      height: 400px;
+      border: none;
+      background: #111;
+    }
+    .showcase-info {
+      padding: 1.5rem 2rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-top: 1px solid rgba(255,255,255,0.08);
+    }
+    .showcase-info h3 {
+      font-size: 1.25rem;
+    }
+    .showcase-info p {
+      color: #666;
+      font-size: 0.9rem;
+    }
+    .showcase-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.6rem 1.2rem;
+      background: transparent;
+      border: 1px solid #333;
+      color: #fff;
+      border-radius: 6px;
+      text-decoration: none;
+      font-size: 0.9rem;
+      transition: border-color 0.2s, background 0.2s;
+    }
+    .showcase-link:hover {
+      border-color: #00d4ff;
+      background: rgba(0, 212, 255, 0.1);
+    }
+
+    /* Trust Badges */
+    .trust-badges {
+      padding: 3rem 2rem;
+      text-align: center;
+      border-top: 1px solid #151515;
+    }
+    .trust-badges p {
+      color: #555;
+      font-size: 0.85rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      margin-bottom: 1.5rem;
+    }
+    .badges {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 2.5rem;
+      flex-wrap: wrap;
+      opacity: 0.6;
+    }
+    .badge-item {
+      color: #888;
+      font-size: 0.95rem;
+      font-weight: 500;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    /* Launch Banner */
+    .launch-banner {
+      background: linear-gradient(90deg, #7b2dff 0%, #00d4ff 50%, #ff2d7b 100%);
+      color: #fff;
+      text-align: center;
+      padding: 0.75rem 1rem;
+      font-size: 0.95rem;
+      font-weight: 500;
+    }
+    .launch-banner code {
+      background: rgba(0,0,0,0.3);
+      padding: 0.2rem 0.6rem;
+      border-radius: 4px;
+      font-family: 'SF Mono', Monaco, monospace;
+      font-weight: 700;
+      color: #fff;
+    }
+    .launch-banner a {
+      color: #fff;
+      text-decoration: underline;
+    }
   </style>
 </head>
 <body>
+  <div class="launch-banner">
+    🎉 <strong>Launch Day!</strong> First 100 users get 3 months of Pro FREE with code <code>letsgo</code> — <a href="/dashboard">Claim yours</a>
+  </div>
   <nav>
     <a href="/" class="nav-logo">itsalive.co</a>
     <div class="nav-links">
@@ -4542,6 +5016,56 @@ function landingPage() {
     </div>
   </section>
 
+  <section class="social-proof">
+    <div class="counter">
+      <span class="counter-number" id="sites-count">--</span>
+      <span class="counter-label">sites launched this week</span>
+    </div>
+    <script>
+      fetch('https://api.itsalive.co/stats/public').then(r => r.json()).then(data => {
+        document.getElementById('sites-count').textContent = data.sitesThisWeek || '10+';
+      }).catch(() => {
+        document.getElementById('sites-count').textContent = '10+';
+      });
+    </script>
+  </section>
+
+  <section class="showcase">
+    <div class="showcase-browser">
+      <div class="browser-header">
+        <div class="browser-btn red"></div>
+        <div class="browser-btn yellow"></div>
+        <div class="browser-btn green"></div>
+        <div class="browser-url">eat.itsalive.co</div>
+      </div>
+      <iframe src="https://eat.itsalive.co" class="browser-content" title="eat.itsalive.co example"></iframe>
+    </div>
+    <div class="showcase-info">
+      <h3>Built with itsalive.co</h3>
+      <p>A fully functional restaurant finder with auth, database, and AI-powered search. Deployed in seconds.</p>
+      <a href="https://eat.itsalive.co" target="_blank" class="showcase-link">
+        Visit Site
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
+          <polyline points="15 3 21 3 21 9"></polyline>
+          <line x1="10" y1="14" x2="21" y2="3"></line>
+        </svg>
+      </a>
+    </div>
+  </section>
+
+  <section class="trust-badges">
+    <p>Powered by</p>
+    <div class="badges">
+      <span class="badge-item">☁️ Cloudflare</span>
+      <span class="badge-item">💳 Stripe</span>
+      <span class="badge-item">🤖 OpenAI</span>
+      <span class="badge-item">🧠 Anthropic</span>
+      <span class="badge-item">✨ Gemini</span>
+      <span class="badge-item">📧 Resend</span>
+    </div>
+  </section>
+
   <section class="features">
     <h2>Everything You Need, Built In</h2>
     <p class="subtitle">Integrates with Claude Code to give it superpowers. No more plumbing, just vibe and watch the magic. &#129668;</p>
@@ -4602,7 +5126,7 @@ function landingPage() {
           <li>Auth, database, hosting</li>
           <li>Basic analytics</li>
           <li>100 emails/day</li>
-          <li>AI: pay per use</li>
+          <li>AI: pay per use <a href="/docs/credits" style="color:#00d4ff;font-size:0.85em;">(What are credits?)</a></li>
           <li>10,000 visitors/month</li>
         </ul>
         <button class="plan-cta secondary" onclick="navigator.clipboard.writeText('npx itsalive-co')">Get Started Free</button>
@@ -4616,11 +5140,11 @@ function landingPage() {
           <li>Staging environment</li>
           <li>Full analytics dashboard</li>
           <li>1,000 emails/day</li>
-          <li>AI: pay per use</li>
+          <li>AI: pay per use <a href="/docs/credits" style="color:#00d4ff;font-size:0.85em;">(What are credits?)</a></li>
           <li>100,000 visitors/month</li>
           <li>Priority support</li>
         </ul>
-        <button class="plan-cta">Coming Soon</button>
+        <a href="/dashboard" class="plan-cta" style="display:inline-block;text-decoration:none;">Upgrade to Pro</a>
       </div>
       <div class="plan">
         <div class="plan-name">Studio</div>
@@ -4821,4 +5345,309 @@ function injectOGTags(html, ogData, subdomain) {
   }
 
   return html;
+}
+
+function adminPage() {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin - itsalive.co</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      background: #0a0a0b;
+      color: #fff;
+      min-height: 100vh;
+    }
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 1.5rem 2rem;
+      border-bottom: 1px solid #1a1a1a;
+      background: #0d0d0d;
+    }
+    .logo {
+      font-size: 1.5rem;
+      font-weight: 800;
+      background: linear-gradient(135deg, #00d4ff 0%, #7b2dff 50%, #ff2d7b 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      text-decoration: none;
+    }
+    .header-right {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+    .user-email {
+      color: #888;
+      font-size: 0.9rem;
+    }
+    .btn {
+      display: inline-block;
+      padding: 0.6rem 1.2rem;
+      background: #fff;
+      color: #000;
+      border: none;
+      border-radius: 6px;
+      font-size: 0.9rem;
+      font-weight: 600;
+      cursor: pointer;
+      text-decoration: none;
+      transition: transform 0.2s;
+    }
+    .btn:hover { transform: translateY(-1px); }
+    .btn-secondary {
+      background: transparent;
+      border: 1px solid #333;
+      color: #fff;
+    }
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 2rem;
+    }
+    h1 {
+      font-size: 1.75rem;
+      margin-bottom: 0.5rem;
+    }
+    .subtitle {
+      color: #666;
+      margin-bottom: 2rem;
+    }
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 1rem;
+      margin-bottom: 2rem;
+    }
+    .stat-card {
+      background: rgba(255,255,255,0.02);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 12px;
+      padding: 1.5rem;
+    }
+    .stat-card h3 {
+      font-size: 0.85rem;
+      color: #666;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 0.5rem;
+    }
+    .stat-card .value {
+      font-size: 2rem;
+      font-weight: 700;
+    }
+    .section {
+      margin-bottom: 2rem;
+    }
+    .section h2 {
+      font-size: 1.25rem;
+      margin-bottom: 1rem;
+      padding-bottom: 0.5rem;
+      border-bottom: 1px solid #222;
+    }
+    .sites-table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    .sites-table th,
+    .sites-table td {
+      text-align: left;
+      padding: 0.75rem 1rem;
+      border-bottom: 1px solid #1a1a1a;
+    }
+    .sites-table th {
+      color: #666;
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      font-weight: 600;
+    }
+    .sites-table tr:hover {
+      background: rgba(255,255,255,0.02);
+    }
+    .sites-table a {
+      color: #00d4ff;
+      text-decoration: none;
+    }
+    .sites-table a:hover {
+      text-decoration: underline;
+    }
+    .badge {
+      display: inline-block;
+      padding: 0.2rem 0.5rem;
+      border-radius: 4px;
+      font-size: 0.75rem;
+      font-weight: 600;
+    }
+    .badge-pro {
+      background: linear-gradient(135deg, #7b2dff, #ff2d7b);
+      color: #fff;
+    }
+    .badge-free {
+      background: #333;
+      color: #888;
+    }
+    .loading {
+      text-align: center;
+      padding: 3rem;
+      color: #666;
+    }
+    .error {
+      background: rgba(255,50,50,0.1);
+      border: 1px solid rgba(255,50,50,0.3);
+      color: #ff6b6b;
+      padding: 1rem;
+      border-radius: 8px;
+      margin-bottom: 1rem;
+    }
+    .coupons-list {
+      display: flex;
+      gap: 1rem;
+      flex-wrap: wrap;
+    }
+    .coupon-card {
+      background: rgba(255,255,255,0.02);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 8px;
+      padding: 1rem;
+      min-width: 200px;
+    }
+    .coupon-code {
+      font-family: monospace;
+      font-size: 1.1rem;
+      font-weight: 700;
+      color: #00d4ff;
+    }
+    .coupon-uses {
+      color: #666;
+      font-size: 0.85rem;
+      margin-top: 0.25rem;
+    }
+    .time-ago {
+      color: #666;
+      font-size: 0.85rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <a href="/" class="logo">itsalive.co</a>
+    <div class="header-right">
+      <span class="user-email" id="userEmail"></span>
+      <a href="/" class="btn btn-secondary">← Dashboard</a>
+    </div>
+  </div>
+
+  <div class="container">
+    <h1>Admin Panel</h1>
+    <p class="subtitle">Platform overview and site management</p>
+
+    <div id="content">
+      <div class="loading">Loading...</div>
+    </div>
+  </div>
+
+  <script>
+    const API = 'https://api.itsalive.co';
+
+    function timeAgo(dateString) {
+      const date = new Date(dateString);
+      const now = new Date();
+      const seconds = Math.floor((now - date) / 1000);
+
+      if (seconds < 60) return 'just now';
+      if (seconds < 3600) return Math.floor(seconds / 60) + 'm ago';
+      if (seconds < 86400) return Math.floor(seconds / 3600) + 'h ago';
+      if (seconds < 604800) return Math.floor(seconds / 86400) + 'd ago';
+      return date.toLocaleDateString();
+    }
+
+    async function checkAuth() {
+      try {
+        const res = await fetch(API + '/owner/me', { credentials: 'include' });
+        if (!res.ok) {
+          window.location.href = '/?redirect=/admin';
+          return null;
+        }
+        const data = await res.json();
+        document.getElementById('userEmail').textContent = data.email;
+        return data;
+      } catch (e) {
+        window.location.href = '/';
+        return null;
+      }
+    }
+
+    async function loadAdmin() {
+      const user = await checkAuth();
+      if (!user) return;
+
+      try {
+        const [statsRes, sitesRes] = await Promise.all([
+          fetch(API + '/admin/stats', { credentials: 'include' }),
+          fetch(API + '/admin/sites?limit=100', { credentials: 'include' })
+        ]);
+
+        if (!statsRes.ok || !sitesRes.ok) {
+          const error = await statsRes.json().catch(() => ({ error: 'Not authorized' }));
+          document.getElementById('content').innerHTML =
+            '<div class="error">' + (error.error || 'You do not have access to the admin panel.') + '</div>';
+          return;
+        }
+
+        const stats = await statsRes.json();
+        const sites = await sitesRes.json();
+
+        let couponsHtml = stats.coupons.map(function(c) {
+          return '<div class="coupon-card"><div class="coupon-code">' + c.code + '</div><div class="coupon-uses">' + c.uses_remaining + '/' + c.max_uses + ' remaining</div></div>';
+        }).join('');
+
+        let sitesHtml = sites.sites.map(function(site) {
+          let planBadge = site.plan
+            ? '<span class="badge badge-pro">' + site.plan + '</span>'
+            : '<span class="badge badge-free">Free</span>';
+          let customDomain = site.custom_domain
+            ? '<br><small style="color:#666">' + site.custom_domain + '</small>'
+            : '';
+          return '<tr>' +
+            '<td><a href="https://' + site.subdomain + '.itsalive.co" target="_blank">' + site.subdomain + '.itsalive.co</a>' + customDomain + '</td>' +
+            '<td>' + (site.owner_email || '-') + '</td>' +
+            '<td>' + planBadge + '</td>' +
+            '<td>' + (site.user_count || 0) + '</td>' +
+            '<td>' + (site.data_count || 0) + '</td>' +
+            '<td class="time-ago">' + timeAgo(site.created_at) + '</td>' +
+            '</tr>';
+        }).join('');
+
+        let proCount = stats.subscriptions.reduce(function(a, s) { return a + s.count; }, 0);
+
+        document.getElementById('content').innerHTML =
+          '<div class="stats-grid">' +
+            '<div class="stat-card"><h3>Total Sites</h3><div class="value">' + stats.total_sites + '</div></div>' +
+            '<div class="stat-card"><h3>Total Owners</h3><div class="value">' + stats.total_owners + '</div></div>' +
+            '<div class="stat-card"><h3>Pro Subscriptions</h3><div class="value">' + proCount + '</div></div>' +
+            '<div class="stat-card"><h3>Custom Domains</h3><div class="value">' + (sites.stats ? sites.stats.custom_domains : 0) + '</div></div>' +
+          '</div>' +
+          '<div class="section"><h2>Coupons</h2><div class="coupons-list">' + couponsHtml + '</div></div>' +
+          '<div class="section"><h2>All Sites (' + sites.total + ')</h2>' +
+            '<table class="sites-table"><thead><tr>' +
+              '<th>Site</th><th>Owner</th><th>Plan</th><th>Users</th><th>Data</th><th>Created</th>' +
+            '</tr></thead><tbody>' + sitesHtml + '</tbody></table>' +
+          '</div>';
+      } catch (e) {
+        document.getElementById('content').innerHTML =
+          '<div class="error">Failed to load admin data: ' + e.message + '</div>';
+      }
+    }
+
+    loadAdmin();
+  </script>
+</body>
+</html>`;
 }

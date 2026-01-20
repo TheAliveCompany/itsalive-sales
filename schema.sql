@@ -97,6 +97,8 @@ CREATE TABLE IF NOT EXISTS app_settings (
   email_primary_color TEXT,
   email_button_color TEXT,
   email_tagline TEXT,
+  email_reply_to TEXT,            -- Reply-to address for emails
+  email_from_name TEXT,           -- Custom from name for emails
   branding_configured INTEGER DEFAULT 0,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
@@ -370,3 +372,141 @@ CREATE INDEX IF NOT EXISTS idx_subscriptions_app ON subscriptions(app_subdomain)
 CREATE INDEX IF NOT EXISTS idx_subscriptions_stripe ON subscriptions(stripe_subscription_id);
 CREATE INDEX IF NOT EXISTS idx_credit_transactions_owner ON credit_transactions(owner_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_stripe_customers_stripe ON stripe_customers(stripe_customer_id);
+
+-- Email subscribers for newsletter/notification features
+CREATE TABLE IF NOT EXISTS subscribers (
+  id TEXT PRIMARY KEY,
+  app_subdomain TEXT NOT NULL,
+  email TEXT NOT NULL,
+  tags TEXT,                      -- JSON array: ["newsletter", "alerts"]
+  status TEXT DEFAULT 'active',   -- 'active', 'unsubscribed', 'bounced'
+  source TEXT,                    -- 'form', 'import', 'api'
+  metadata TEXT,                  -- JSON: {"name": "John", "company": "Acme"}
+  unsubscribe_token TEXT UNIQUE,
+  subscribed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  unsubscribed_at DATETIME,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(app_subdomain, email)
+);
+
+CREATE INDEX IF NOT EXISTS idx_subscribers_app ON subscribers(app_subdomain, status);
+CREATE INDEX IF NOT EXISTS idx_subscribers_token ON subscribers(unsubscribe_token);
+
+-- Custom email sender domains (paid plans only)
+CREATE TABLE IF NOT EXISTS email_domains (
+  id TEXT PRIMARY KEY,
+  app_subdomain TEXT NOT NULL,
+  domain TEXT NOT NULL,           -- 'acme.com'
+  resend_domain_id TEXT,          -- Resend's domain ID
+  status TEXT DEFAULT 'pending',  -- 'pending', 'verified', 'failed'
+  dns_records TEXT,               -- JSON: records to add
+  verified_at DATETIME,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(app_subdomain, domain)
+);
+
+CREATE INDEX IF NOT EXISTS idx_email_domains_app ON email_domains(app_subdomain);
+
+-- Coupons for free subscriptions
+CREATE TABLE IF NOT EXISTS coupons (
+  code TEXT PRIMARY KEY,
+  description TEXT,
+  plan TEXT NOT NULL,              -- 'pro_monthly' or 'pro_annual'
+  duration_months INTEGER NOT NULL, -- How many months the subscription lasts
+  max_uses INTEGER,                -- NULL = unlimited
+  uses_remaining INTEGER,          -- Decremented on each use
+  expires_at DATETIME,             -- NULL = never expires
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Coupon redemption log
+CREATE TABLE IF NOT EXISTS coupon_redemptions (
+  id TEXT PRIMARY KEY,
+  coupon_code TEXT NOT NULL,
+  owner_id TEXT NOT NULL,
+  app_subdomain TEXT NOT NULL,
+  subscription_id TEXT NOT NULL,
+  redeemed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (coupon_code) REFERENCES coupons(code),
+  FOREIGN KEY (owner_id) REFERENCES owners(id),
+  FOREIGN KEY (subscription_id) REFERENCES subscriptions(id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_coupon_redemptions_coupon ON coupon_redemptions(coupon_code);
+CREATE INDEX IF NOT EXISTS idx_coupon_redemptions_owner ON coupon_redemptions(owner_id);
+
+-- Reseller program
+CREATE TABLE IF NOT EXISTS resellers (
+  id TEXT PRIMARY KEY,
+  owner_id TEXT UNIQUE NOT NULL,        -- Link to owner account
+  company_name TEXT,
+  payout_email TEXT NOT NULL,           -- PayPal or email for payouts
+  status TEXT DEFAULT 'active',         -- 'active', 'suspended', 'pending'
+  total_earned INTEGER DEFAULT 0,       -- Lifetime earnings in cents
+  total_paid INTEGER DEFAULT 0,         -- Total paid out in cents
+  pending_payout INTEGER DEFAULT 0,     -- Current pending payout in cents
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (owner_id) REFERENCES owners(id)
+);
+
+-- Reseller-generated coupon codes
+CREATE TABLE IF NOT EXISTS reseller_codes (
+  code TEXT PRIMARY KEY,
+  reseller_id TEXT NOT NULL,
+  discount_type TEXT NOT NULL,          -- 'free_1month', 'half_3months', 'discount_year'
+  uses_count INTEGER DEFAULT 0,         -- How many times used
+  status TEXT DEFAULT 'active',         -- 'active', 'disabled'
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (reseller_id) REFERENCES resellers(id)
+);
+
+-- Track referrals from reseller codes
+CREATE TABLE IF NOT EXISTS reseller_referrals (
+  id TEXT PRIMARY KEY,
+  reseller_id TEXT NOT NULL,
+  reseller_code TEXT NOT NULL,
+  owner_id TEXT NOT NULL,               -- The referred customer
+  app_subdomain TEXT NOT NULL,
+  subscription_id TEXT,
+  discount_type TEXT NOT NULL,
+  tracking_ends_at DATETIME NOT NULL,   -- 12 months from signup
+  total_paid INTEGER DEFAULT 0,         -- Total customer has paid in cents
+  commission_earned INTEGER DEFAULT 0,  -- 20% of total_paid
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (reseller_id) REFERENCES resellers(id),
+  FOREIGN KEY (owner_id) REFERENCES owners(id)
+);
+
+-- Commission transactions log
+CREATE TABLE IF NOT EXISTS reseller_commissions (
+  id TEXT PRIMARY KEY,
+  reseller_id TEXT NOT NULL,
+  referral_id TEXT NOT NULL,
+  payment_id TEXT,                      -- Stripe payment intent
+  amount_paid INTEGER NOT NULL,         -- What customer paid in cents
+  commission_amount INTEGER NOT NULL,   -- 20% commission in cents
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (reseller_id) REFERENCES resellers(id),
+  FOREIGN KEY (referral_id) REFERENCES reseller_referrals(id)
+);
+
+-- Reseller payout history
+CREATE TABLE IF NOT EXISTS reseller_payouts (
+  id TEXT PRIMARY KEY,
+  reseller_id TEXT NOT NULL,
+  amount INTEGER NOT NULL,              -- Payout amount in cents
+  method TEXT DEFAULT 'paypal',         -- 'paypal', 'bank', 'manual'
+  status TEXT DEFAULT 'pending',        -- 'pending', 'completed', 'failed'
+  notes TEXT,
+  paid_at DATETIME,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (reseller_id) REFERENCES resellers(id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_resellers_owner ON resellers(owner_id);
+CREATE INDEX IF NOT EXISTS idx_reseller_codes_reseller ON reseller_codes(reseller_id);
+CREATE INDEX IF NOT EXISTS idx_reseller_referrals_reseller ON reseller_referrals(reseller_id);
+CREATE INDEX IF NOT EXISTS idx_reseller_referrals_owner ON reseller_referrals(owner_id);
+CREATE INDEX IF NOT EXISTS idx_reseller_commissions_reseller ON reseller_commissions(reseller_id);
+CREATE INDEX IF NOT EXISTS idx_reseller_payouts_reseller ON reseller_payouts(reseller_id);

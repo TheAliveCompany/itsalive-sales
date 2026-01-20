@@ -59,6 +59,13 @@ Two Cloudflare Workers:
 
 The marketing site at itsalive.co lives in the `site/` directory and auto-deploys on git push.
 
+**To deploy the sales site:** Simply commit and push to GitHub. The site auto-deploys via GitHub Pages.
+```bash
+git add site/
+git commit -m "Update sales site"
+git push
+```
+
 **When creating new pages:**
 - Always add Open Graph tags for social sharing cards
 - Use this template in the `<head>`:

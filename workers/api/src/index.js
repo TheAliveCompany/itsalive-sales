@@ -437,20 +437,38 @@ function emailTemplate({ buttonText, buttonUrl, footer, branding = {} }) {
 }
 
 // Helper to send email via Resend
-async function sendEmail(env, to, subject, html, fromName = "It's Alive!") {
+async function sendEmail(env, to, subject, html, options = {}) {
+  // Support both old signature (fromName as string) and new signature (options object)
+  if (typeof options === 'string') {
+    options = { fromName: options };
+  }
+
+  const { fromName = "It's Alive!", replyTo, fromDomain } = options;
+
   try {
+    // Determine from address based on verified domain or default
+    const from = fromDomain
+      ? `${fromName} <noreply@${fromDomain}>`
+      : `${fromName} <noreply@itsalive.co>`;
+
+    const body = {
+      from,
+      to,
+      subject,
+      html,
+    };
+
+    if (replyTo) {
+      body.reply_to = replyTo;
+    }
+
     const res = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${env.RESEND_API_KEY}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        from: `${fromName} <noreply@itsalive.co>`,
-        to,
-        subject,
-        html,
-      }),
+      body: JSON.stringify(body),
     });
     if (!res.ok) {
       const error = await res.text();
@@ -461,6 +479,131 @@ async function sendEmail(env, to, subject, html, fromName = "It's Alive!") {
     console.error('sendEmail error:', e.message);
     return false;
   }
+}
+
+// Spam prevention: heuristic scoring
+function heuristicSpamScore(subject, html) {
+  let score = 0;
+
+  // Check link count
+  const linkCount = (html.match(/href=/gi) || []).length;
+  if (linkCount > 10) score += 30;
+
+  // Check for spam phrases
+  const spamPhrases = ['act now', 'limited time', 'click here', 'winner', 'congratulations', 'free money', 'urgent', 'guaranteed', 'no obligation'];
+  const lowerHtml = html.toLowerCase();
+  const lowerSubject = subject.toLowerCase();
+  for (const phrase of spamPhrases) {
+    if (lowerHtml.includes(phrase) || lowerSubject.includes(phrase)) score += 15;
+  }
+
+  // All caps subject
+  if (subject === subject.toUpperCase() && subject.length > 10) score += 20;
+
+  // Minimal content
+  const textContent = html.replace(/<[^>]*>/g, '').trim();
+  if (textContent.length < 50) score += 25;
+
+  // Excessive exclamation marks
+  const exclamationCount = (subject.match(/!/g) || []).length;
+  if (exclamationCount > 2) score += 15;
+
+  return Math.min(score, 100);
+}
+
+// AI spam check for borderline cases
+async function aiSpamCheck(env, subject, html) {
+  if (!env.ANTHROPIC_API_KEY) {
+    return { isSpam: false, reason: 'AI check unavailable' };
+  }
+
+  try {
+    const textContent = html.replace(/<[^>]*>/g, '').substring(0, 1000);
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'x-api-key': env.ANTHROPIC_API_KEY,
+        'anthropic-version': '2023-06-01',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'claude-3-haiku-20240307',
+        max_tokens: 100,
+        messages: [{
+          role: 'user',
+          content: `Is this email spam or legitimate marketing/transactional email? Reply with SPAM or OK followed by a brief reason.
+
+Subject: ${subject}
+Content: ${textContent}`
+        }]
+      })
+    });
+
+    if (!res.ok) {
+      return { isSpam: false, reason: 'AI check failed' };
+    }
+
+    const data = await res.json();
+    const response = data.content[0].text.toUpperCase();
+    const isSpam = response.startsWith('SPAM');
+    return { isSpam, reason: data.content[0].text };
+  } catch (e) {
+    console.error('AI spam check error:', e.message);
+    return { isSpam: false, reason: 'AI check error' };
+  }
+}
+
+// Combined spam check
+async function checkSpam(env, subject, html, subdomain) {
+  // Layer 1: Heuristics
+  const score = heuristicSpamScore(subject, html);
+
+  if (score > 80) {
+    return { blocked: true, reason: 'Content flagged as spam', score };
+  }
+
+  if (score < 30) {
+    return { blocked: false, score };
+  }
+
+  // Layer 2: AI check for borderline cases (30-80)
+  const aiResult = await aiSpamCheck(env, subject, html);
+
+  if (aiResult.isSpam) {
+    return { blocked: true, reason: aiResult.reason, score, aiChecked: true };
+  }
+
+  return { blocked: false, score, aiChecked: true };
+}
+
+// Email rate limiting per app
+async function checkEmailRateLimit(env, subdomain) {
+  const key = `email_rate:${subdomain}`;
+  const current = await env.RATE_LIMITS.get(key);
+  const count = current ? parseInt(current) : 0;
+
+  if (count >= 100) {  // 100 emails/hour
+    return { allowed: false, remaining: 0 };
+  }
+
+  await env.RATE_LIMITS.put(key, String(count + 1), { expirationTtl: 3600 });
+  return { allowed: true, remaining: 100 - count - 1 };
+}
+
+// Add unsubscribe footer to emails
+function addUnsubscribeFooter(html, unsubscribeUrl) {
+  const footer = `
+    <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #e0e0e0; text-align: center; font-size: 12px; color: #666;">
+      <p>You received this email because you're subscribed to updates.</p>
+      <p><a href="${unsubscribeUrl}" style="color: #666; text-decoration: underline;">Unsubscribe</a></p>
+    </div>
+  `;
+
+  // Insert before closing body tag if present, otherwise append
+  if (html.includes('</body>')) {
+    return html.replace('</body>', footer + '</body>');
+  }
+  return html + footer;
 }
 
 // Helper to get subdomain from request origin
@@ -722,6 +865,121 @@ router.get('/owner/apps', async (request, env) => {
   `).bind(owner.owner_id).all();
 
   return new Response(JSON.stringify({ apps: apps.results || [] }));
+});
+
+// Public stats endpoint (for landing page counter)
+router.get('/stats/public', async (request, env) => {
+  // Count sites created in the last 7 days
+  const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+  const result = await env.DB.prepare(
+    'SELECT COUNT(*) as count FROM apps WHERE created_at >= ?'
+  ).bind(oneWeekAgo).first();
+
+  return new Response(JSON.stringify({
+    sitesThisWeek: result?.count || 0
+  }), {
+    headers: {
+      'content-type': 'application/json',
+      'access-control-allow-origin': '*',
+      'cache-control': 'public, max-age=300' // Cache for 5 minutes
+    }
+  });
+});
+
+// Admin emails that can access /admin endpoints
+const ADMIN_EMAILS = ['s@swh.me', 'sam@itsalive.co', 'melih@itsalive.co'];
+
+// GET /admin/sites - List ALL sites on the platform (admin only)
+router.get('/admin/sites', async (request, env) => {
+  const owner = await getOwnerSession(request, env);
+  if (!owner) {
+    return new Response(JSON.stringify({ error: 'Not logged in' }), { status: 401 });
+  }
+
+  if (!ADMIN_EMAILS.includes(owner.email)) {
+    return new Response(JSON.stringify({ error: 'Not authorized' }), { status: 403 });
+  }
+
+  const url = new URL(request.url);
+  const limit = Math.min(parseInt(url.searchParams.get('limit') || '100'), 500);
+  const offset = parseInt(url.searchParams.get('offset') || '0');
+
+  // Get all apps with owner info and stats
+  const apps = await env.DB.prepare(`
+    SELECT
+      a.subdomain,
+      a.custom_domain,
+      a.created_at,
+      o.email as owner_email,
+      s.email_app_name,
+      sub.plan,
+      sub.status as subscription_status,
+      (SELECT COUNT(*) FROM app_users WHERE app_subdomain = a.subdomain) as user_count,
+      (SELECT COUNT(*) FROM app_data WHERE app_subdomain = a.subdomain) as data_count
+    FROM apps a
+    LEFT JOIN owners o ON a.owner_id = o.id
+    LEFT JOIN app_settings s ON a.subdomain = s.app_subdomain
+    LEFT JOIN subscriptions sub ON a.subdomain = sub.app_subdomain AND sub.status = 'active'
+    ORDER BY a.created_at DESC
+    LIMIT ? OFFSET ?
+  `).bind(limit, offset).all();
+
+  // Get total count
+  const countResult = await env.DB.prepare('SELECT COUNT(*) as total FROM apps').first();
+
+  // Get some aggregate stats
+  const stats = await env.DB.prepare(`
+    SELECT
+      COUNT(DISTINCT a.subdomain) as total_sites,
+      COUNT(DISTINCT o.id) as total_owners,
+      COUNT(DISTINCT CASE WHEN sub.status = 'active' THEN a.subdomain END) as pro_sites,
+      COUNT(DISTINCT a.custom_domain) as custom_domains
+    FROM apps a
+    LEFT JOIN owners o ON a.owner_id = o.id
+    LEFT JOIN subscriptions sub ON a.subdomain = sub.app_subdomain
+  `).first();
+
+  return {
+    sites: apps.results || [],
+    total: countResult?.total || 0,
+    limit,
+    offset,
+    stats,
+  };
+});
+
+// GET /admin/stats - Platform-wide statistics (admin only)
+router.get('/admin/stats', async (request, env) => {
+  const owner = await getOwnerSession(request, env);
+  if (!owner) {
+    return new Response(JSON.stringify({ error: 'Not logged in' }), { status: 401 });
+  }
+
+  if (!ADMIN_EMAILS.includes(owner.email)) {
+    return new Response(JSON.stringify({ error: 'Not authorized' }), { status: 403 });
+  }
+
+  const [sites, owners, subscriptions, recentSites, coupons] = await Promise.all([
+    env.DB.prepare('SELECT COUNT(*) as count FROM apps').first(),
+    env.DB.prepare('SELECT COUNT(*) as count FROM owners').first(),
+    env.DB.prepare('SELECT COUNT(*) as count, plan FROM subscriptions WHERE status = ? GROUP BY plan').bind('active').all(),
+    env.DB.prepare(`
+      SELECT a.subdomain, a.created_at, o.email
+      FROM apps a
+      LEFT JOIN owners o ON a.owner_id = o.id
+      ORDER BY a.created_at DESC
+      LIMIT 10
+    `).all(),
+    env.DB.prepare('SELECT code, uses_remaining, max_uses FROM coupons').all(),
+  ]);
+
+  return {
+    total_sites: sites?.count || 0,
+    total_owners: owners?.count || 0,
+    subscriptions: subscriptions.results || [],
+    recent_sites: recentSites.results || [],
+    coupons: coupons.results || [],
+  };
 });
 
 // GET /owner/app/:subdomain - Get details for a specific app
@@ -1842,7 +2100,7 @@ router.post('/billing/confirm-subscription', async (request, env) => {
 // GET /billing/config - Get Stripe publishable key for frontend
 router.get('/billing/config', async (request, env) => {
   return {
-    publishable_key: env.STRIPE_PUBLISHABLE_KEY || 'pk_test_51Sr77xAE4eT6zpWA0rmY6zOLZBDsRyvjhtjQBoveuYGKSyeSsI7Sxi7RVF51usb4pVLEmg3UQfkDY3XdOAmJBNvf0037KXgOOd',
+    publishable_key: env.STRIPE_PUBLISHABLE_KEY || 'pk_live_51Sr77gAm9KmWcHbHQxQ5Z3lF2ZXO1ZVT3oy9SI651I51o1flVKSYtr1vthfNgUWonWgvpq7sfPiiDTBtNgE7Hfng00XH6LcFiI',
   };
 });
 
@@ -1881,6 +2139,126 @@ router.post('/billing/portal', async (request, env) => {
   }
 
   return { portal_url: session.url };
+});
+
+// POST /billing/redeem-coupon - Redeem a coupon for free subscription
+router.post('/billing/redeem-coupon', async (request, env) => {
+  const owner = await getOwnerSession(request, env);
+  if (!owner) {
+    return new Response(JSON.stringify({ error: 'Not logged in' }), { status: 401 });
+  }
+
+  const { code, site } = await request.json();
+
+  if (!code) {
+    return new Response(JSON.stringify({ error: 'code is required' }), { status: 400 });
+  }
+
+  if (!site) {
+    return new Response(JSON.stringify({ error: 'site is required' }), { status: 400 });
+  }
+
+  // Verify the site belongs to this owner
+  const app = await env.DB.prepare(
+    'SELECT subdomain FROM apps WHERE subdomain = ? AND owner_id = ?'
+  ).bind(site, owner.owner_id).first();
+
+  if (!app) {
+    return new Response(JSON.stringify({ error: 'Site not found or not owned by you' }), { status: 404 });
+  }
+
+  // Check for existing active subscription for this site
+  const existingSub = await env.DB.prepare(
+    'SELECT id FROM subscriptions WHERE app_subdomain = ? AND status = ?'
+  ).bind(site, 'active').first();
+
+  if (existingSub) {
+    return new Response(JSON.stringify({ error: 'This site already has an active subscription' }), { status: 400 });
+  }
+
+  // Get the coupon
+  const coupon = await env.DB.prepare(
+    'SELECT * FROM coupons WHERE code = ?'
+  ).bind(code.toLowerCase()).first();
+
+  if (!coupon) {
+    return new Response(JSON.stringify({ error: 'Invalid coupon code' }), { status: 404 });
+  }
+
+  // Check if coupon has uses remaining
+  if (coupon.uses_remaining !== null && coupon.uses_remaining <= 0) {
+    return new Response(JSON.stringify({ error: 'This coupon has been fully redeemed' }), { status: 400 });
+  }
+
+  // Check if coupon has expired
+  if (coupon.expires_at && new Date(coupon.expires_at) < new Date()) {
+    return new Response(JSON.stringify({ error: 'This coupon has expired' }), { status: 400 });
+  }
+
+  // Check if user already redeemed this coupon
+  const existingRedemption = await env.DB.prepare(
+    'SELECT id FROM coupon_redemptions WHERE coupon_code = ? AND owner_id = ?'
+  ).bind(code.toLowerCase(), owner.owner_id).first();
+
+  if (existingRedemption) {
+    return new Response(JSON.stringify({ error: 'You have already redeemed this coupon' }), { status: 400 });
+  }
+
+  // Calculate subscription period
+  const now = Math.floor(Date.now() / 1000);
+  const periodEnd = now + (coupon.duration_months * 30 * 24 * 60 * 60);
+
+  // Create subscription record
+  const subscriptionId = generateId();
+  const fakeStripeId = `coupon_${code.toLowerCase()}_${subscriptionId}`;
+
+  await env.DB.prepare(`
+    INSERT INTO subscriptions (id, owner_id, app_subdomain, stripe_subscription_id, plan, status, current_period_start, current_period_end)
+    VALUES (?, ?, ?, ?, ?, 'active', datetime(?, 'unixepoch'), datetime(?, 'unixepoch'))
+  `).bind(
+    subscriptionId,
+    owner.owner_id,
+    site,
+    fakeStripeId,
+    coupon.plan,
+    now,
+    periodEnd
+  ).run();
+
+  // Grant credits based on plan
+  const PLAN_CREDITS = { pro_monthly: 1500, pro_annual: 20000 };
+  const credits = PLAN_CREDITS[coupon.plan] || 1500;
+
+  await addCreditsWithTransaction(
+    env,
+    owner.owner_id,
+    credits,
+    'coupon',
+    null,
+    `Coupon "${code}" redeemed - ${credits.toLocaleString()} credits`
+  );
+
+  // Record the redemption
+  await env.DB.prepare(`
+    INSERT INTO coupon_redemptions (id, coupon_code, owner_id, app_subdomain, subscription_id)
+    VALUES (?, ?, ?, ?, ?)
+  `).bind(generateId(), code.toLowerCase(), owner.owner_id, site, subscriptionId).run();
+
+  // Decrement uses remaining
+  if (coupon.uses_remaining !== null) {
+    await env.DB.prepare(
+      'UPDATE coupons SET uses_remaining = uses_remaining - 1 WHERE code = ?'
+    ).bind(code.toLowerCase()).run();
+  }
+
+  return {
+    success: true,
+    subscription_id: subscriptionId,
+    plan: coupon.plan,
+    duration_months: coupon.duration_months,
+    credits_added: credits,
+    expires_at: new Date(periodEnd * 1000).toISOString(),
+  };
 });
 
 // GET /billing/info - Get billing status
@@ -3447,7 +3825,7 @@ router.get('/preview/email/deploy', async (request, env) => {
       appName: 'my-awesome-app.itsalive.co',
       tagline: 'Click below to verify your deployment',
     },
-  }), { headers: { 'content-type': 'text/html' } });
+  }), { headers: { 'content-type': 'text/html; charset=utf-8' } });
 });
 
 // GET /preview/email/login - Preview login email
@@ -3461,7 +3839,152 @@ router.get('/preview/email/login', async (request, env) => {
       primaryColor: '#ff6b6b',
       tagline: 'Your productivity companion',
     },
-  }), { headers: { 'content-type': 'text/html' } });
+  }), { headers: { 'content-type': 'text/html; charset=utf-8' } });
+});
+
+// GET /preview/email/welcome - Preview welcome email
+router.get('/preview/email/welcome', async (request, env) => {
+  const subdomain = 'my-awesome-app';
+  const email = 'user@example.com';
+  const welcomeEmailHtml = `
+    <div style="font-family: system-ui, sans-serif; max-width: 600px; line-height: 1.6;">
+      <h1 style="font-size: 32px; margin: 0 0 24px 0;">Your site is live! 🎉</h1>
+
+      <p style="font-size: 18px; margin: 0 0 16px 0;">
+        <a href="https://${subdomain}.itsalive.co" style="color: #00d4ff; font-weight: bold;">${subdomain}.itsalive.co</a> is now live on the internet.
+      </p>
+
+      <p style="margin: 0 0 16px 0;">
+        We're so excited you're here! Honestly, we just launched itsalive.co and you're one of our earliest users. That means a lot to us.
+      </p>
+
+      <p style="margin: 0 0 24px 0;">
+        If anything feels weird, confusing, or broken — or if you have ideas for how we could make this better — please just reply to this email. We read everything and we genuinely want to hear from you.
+      </p>
+
+      <div style="background: #f5f5f5; border-radius: 8px; padding: 20px; margin: 0 0 24px 0;">
+        <h3 style="margin: 0 0 12px 0; font-size: 16px;">What's next?</h3>
+        <p style="margin: 0 0 12px 0;">
+          <strong>Dashboard:</strong> Manage your site at <a href="https://dashboard.itsalive.co" style="color: #00d4ff;">dashboard.itsalive.co</a><br>
+          <small style="color: #666;">Log in with the same email you used to deploy (${email})</small>
+        </p>
+        <p style="margin: 0;">
+          <strong>Re-deploy anytime:</strong> Just run <code style="background: #e0e0e0; padding: 2px 6px; border-radius: 4px;">npx itsalive</code> again in your project folder.
+        </p>
+      </div>
+
+      <div style="background: linear-gradient(135deg, #00d4ff22, #ff00ff22); border-radius: 8px; padding: 20px; margin: 0 0 24px 0;">
+        <h3 style="margin: 0 0 12px 0; font-size: 16px;">Upgrade to Pro</h3>
+        <p style="margin: 0 0 8px 0;">
+          With Pro you get AI credits, custom domains, custom email sending, and more. Check it out in your dashboard if you're curious!
+        </p>
+      </div>
+
+      <p style="margin: 0 0 8px 0;">
+        Thanks for building with us,
+      </p>
+      <p style="margin: 0; font-weight: bold;">
+        Melih & Sam
+      </p>
+      <p style="margin: 8px 0 0 0; font-size: 14px; color: #666;">
+        Founders, itsalive.co
+      </p>
+    </div>`;
+  return new Response(welcomeEmailHtml, { headers: { 'content-type': 'text/html; charset=utf-8' } });
+});
+
+// POST /test/send-welcome - Send test welcome email (internal use only)
+router.post('/test/send-welcome', async (request, env) => {
+  const { to, subdomain } = await request.json();
+
+  if (!to || !subdomain) {
+    return new Response(JSON.stringify({ error: 'to and subdomain required' }), { status: 400 });
+  }
+
+  const welcomeEmailHtml = `
+    <div style="font-family: system-ui, sans-serif; max-width: 600px; line-height: 1.6;">
+      <h1 style="font-size: 32px; margin: 0 0 24px 0;">Your site is live! 🎉</h1>
+
+      <p style="font-size: 18px; margin: 0 0 16px 0;">
+        <a href="https://${subdomain}.itsalive.co" style="color: #00d4ff; font-weight: bold;">${subdomain}.itsalive.co</a> is now live on the internet.
+      </p>
+
+      <p style="margin: 0 0 16px 0;">
+        We're so excited you're here! Honestly, we just launched itsalive.co and you're one of our earliest users. That means a lot to us.
+      </p>
+
+      <p style="margin: 0 0 24px 0;">
+        If anything feels weird, confusing, or broken — or if you have ideas for how we could make this better — please just reply to this email. We read everything and we genuinely want to hear from you.
+      </p>
+
+      <div style="background: #f5f5f5; border-radius: 8px; padding: 20px; margin: 0 0 24px 0;">
+        <h3 style="margin: 0 0 12px 0; font-size: 16px;">What's next?</h3>
+        <p style="margin: 0 0 12px 0;">
+          <strong>Dashboard:</strong> Manage your site at <a href="https://dashboard.itsalive.co" style="color: #00d4ff;">dashboard.itsalive.co</a><br>
+          <small style="color: #666;">Log in with the same email you used to deploy (${to})</small>
+        </p>
+        <p style="margin: 0;">
+          <strong>Re-deploy anytime:</strong> Just run <code style="background: #e0e0e0; padding: 2px 6px; border-radius: 4px;">npx itsalive</code> again in your project folder.
+        </p>
+      </div>
+
+      <div style="background: linear-gradient(135deg, #00d4ff22, #ff00ff22); border-radius: 8px; padding: 20px; margin: 0 0 24px 0;">
+        <h3 style="margin: 0 0 12px 0; font-size: 16px;">Upgrade to Pro</h3>
+        <p style="margin: 0 0 8px 0;">
+          With Pro you get AI credits, custom domains, custom email sending, and more. Check it out in your dashboard if you're curious!
+        </p>
+      </div>
+
+      <p style="margin: 0 0 8px 0;">
+        Thanks for building with us,
+      </p>
+      <p style="margin: 0; font-weight: bold;">
+        Melih & Sam
+      </p>
+      <p style="margin: 8px 0 0 0; font-size: 14px; color: #666;">
+        Founders, itsalive.co
+      </p>
+    </div>`;
+
+  // Direct Resend API call for debugging
+  const fromName = "Melih & Sam from itsalive.co";
+  const replyTo = "sam@itsalive.co";
+  const subject = `Your site is live: ${subdomain}.itsalive.co`;
+
+  try {
+    const res = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${env.RESEND_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        from: `${fromName} <noreply@itsalive.co>`,
+        to,
+        subject,
+        html: welcomeEmailHtml,
+        reply_to: replyTo,
+      }),
+    });
+
+    const responseText = await res.text();
+    let responseData;
+    try {
+      responseData = JSON.parse(responseText);
+    } catch {
+      responseData = responseText;
+    }
+
+    return {
+      success: res.ok,
+      status: res.status,
+      to,
+      subdomain,
+      resend_response: responseData,
+    };
+  } catch (e) {
+    return { success: false, error: e.message, to, subdomain };
+  }
 });
 
 // GET /preview/verify - Preview verification page design
@@ -3753,7 +4276,7 @@ router.post('/deploy/:id/finalize', async (request, env) => {
     'DELETE FROM pending_deploys WHERE id = ?'
   ).bind(id).run();
 
-  // Notify about new site launch
+  // Notify about new site launch (internal)
   const filesManifest = pending.files_manifest ? JSON.parse(pending.files_manifest) : [];
   const launchEmailHtml = `
     <div style="font-family: system-ui, sans-serif; max-width: 500px;">
@@ -3768,9 +4291,60 @@ router.post('/deploy/:id/finalize', async (request, env) => {
         <strong>Files deployed:</strong> ${filesManifest.length}
       </p>
     </div>`;
+
+  // Welcome email to the user
+  const welcomeEmailHtml = `
+    <div style="font-family: system-ui, sans-serif; max-width: 600px; line-height: 1.6;">
+      <h1 style="font-size: 32px; margin: 0 0 24px 0;">Your site is live! 🎉</h1>
+
+      <p style="font-size: 18px; margin: 0 0 16px 0;">
+        <a href="https://${pending.subdomain}.itsalive.co" style="color: #00d4ff; font-weight: bold;">${pending.subdomain}.itsalive.co</a> is now live on the internet.
+      </p>
+
+      <p style="margin: 0 0 16px 0;">
+        We're so excited you're here! Honestly, we just launched itsalive.co and you're one of our earliest users. That means a lot to us.
+      </p>
+
+      <p style="margin: 0 0 24px 0;">
+        If anything feels weird, confusing, or broken — or if you have ideas for how we could make this better — please just reply to this email. We read everything and we genuinely want to hear from you.
+      </p>
+
+      <div style="background: #f5f5f5; border-radius: 8px; padding: 20px; margin: 0 0 24px 0;">
+        <h3 style="margin: 0 0 12px 0; font-size: 16px;">What's next?</h3>
+        <p style="margin: 0 0 12px 0;">
+          <strong>Dashboard:</strong> Manage your site at <a href="https://dashboard.itsalive.co" style="color: #00d4ff;">dashboard.itsalive.co</a><br>
+          <small style="color: #666;">Log in with the same email you used to deploy (${pending.email})</small>
+        </p>
+        <p style="margin: 0;">
+          <strong>Re-deploy anytime:</strong> Just run <code style="background: #e0e0e0; padding: 2px 6px; border-radius: 4px;">npx itsalive</code> again in your project folder.
+        </p>
+      </div>
+
+      <div style="background: linear-gradient(135deg, #00d4ff22, #ff00ff22); border-radius: 8px; padding: 20px; margin: 0 0 24px 0;">
+        <h3 style="margin: 0 0 12px 0; font-size: 16px;">Upgrade to Pro</h3>
+        <p style="margin: 0 0 8px 0;">
+          With Pro you get AI credits, custom domains, custom email sending, and more. Check it out in your dashboard if you're curious!
+        </p>
+      </div>
+
+      <p style="margin: 0 0 8px 0;">
+        Thanks for building with us,
+      </p>
+      <p style="margin: 0; font-weight: bold;">
+        Melih & Sam
+      </p>
+      <p style="margin: 8px 0 0 0; font-size: 14px; color: #666;">
+        Founders, itsalive.co
+      </p>
+    </div>`;
+
   await Promise.all([
     sendEmail(env, 'sam@itsalive.co', `New site launched: ${pending.subdomain}.itsalive.co`, launchEmailHtml),
     sendEmail(env, 'melih@itsalive.co', `New site launched: ${pending.subdomain}.itsalive.co`, launchEmailHtml),
+    sendEmail(env, pending.email, `Your site is live: ${pending.subdomain}.itsalive.co`, welcomeEmailHtml, {
+      fromName: "Melih & Sam from itsalive.co",
+      replyTo: "sam@itsalive.co"
+    }),
   ]);
 
   return {
@@ -5568,7 +6142,7 @@ router.post('/email/send', async (request, env) => {
     return new Response(JSON.stringify({ error: 'Invalid origin' }), { status: 400 });
   }
 
-  const { to, subject, html, text, template, template_data, deploy_token } = await request.json();
+  const { to, subject, html, text, template, template_data, deploy_token, reply_to } = await request.json();
 
   // Auth: deploy_token or logged-in owner
   const user = await getSession(request, env);
@@ -5588,8 +6162,19 @@ router.post('/email/send', async (request, env) => {
     return new Response(JSON.stringify({ error: 'Invalid email address' }), { status: 400 });
   }
 
-  // Get branding
+  // Check rate limit
+  const rateLimit = await checkEmailRateLimit(env, subdomain);
+  if (!rateLimit.allowed) {
+    return new Response(JSON.stringify({ error: 'Rate limit exceeded: 100 emails per hour' }), { status: 429 });
+  }
+
+  // Get branding and settings
   const branding = await getAppBranding(env, subdomain);
+
+  // Get app settings for reply-to and custom domain
+  const settings = await env.DB.prepare(
+    'SELECT email_reply_to, email_from_name FROM app_settings WHERE app_subdomain = ?'
+  ).bind(subdomain).first();
 
   // Build HTML content
   let emailHtml = html || '';
@@ -5616,18 +6201,50 @@ router.post('/email/send', async (request, env) => {
     return new Response(JSON.stringify({ error: 'subject is required (or use a template)' }), { status: 400 });
   }
 
+  // Spam check
+  const spamResult = await checkSpam(env, emailSubject, emailHtml, subdomain);
+  if (spamResult.blocked) {
+    return new Response(JSON.stringify({
+      error: 'Email blocked by spam filter',
+      reason: spamResult.reason,
+      score: spamResult.score
+    }), { status: 400 });
+  }
+
+  // Check for verified custom domain
+  const verifiedDomain = await env.DB.prepare(
+    'SELECT domain FROM email_domains WHERE app_subdomain = ? AND status = ?'
+  ).bind(subdomain, 'verified').first();
+
+  // Check if recipient is a subscriber and add unsubscribe link
+  const subscriber = await env.DB.prepare(
+    'SELECT unsubscribe_token FROM subscribers WHERE app_subdomain = ? AND email = ? AND status = ?'
+  ).bind(subdomain, to, 'active').first();
+
   // Wrap in branded template
-  const finalHtml = emailTemplate({
+  let finalHtml = emailTemplate({
     buttonText: null,
     buttonUrl: null,
     footer: emailHtml,
     branding,
   });
 
+  // Add unsubscribe link if sending to a subscriber
+  if (subscriber) {
+    const unsubUrl = `https://api.itsalive.co/unsubscribe?token=${subscriber.unsubscribe_token}`;
+    finalHtml = addUnsubscribeFooter(finalHtml, unsubUrl);
+  }
+
   // Send via Resend
   const id = generateId();
   try {
-    const sent = await sendEmail(env, to, emailSubject, finalHtml, branding.appName || subdomain);
+    const emailOptions = {
+      fromName: settings?.email_from_name || branding.appName || subdomain,
+      replyTo: reply_to || settings?.email_reply_to,
+      fromDomain: verifiedDomain?.domain,
+    };
+
+    const sent = await sendEmail(env, to, emailSubject, finalHtml, emailOptions);
 
     await env.DB.prepare(`
       INSERT INTO email_log (id, app_subdomain, to_email, subject, template, status, sent_at)
@@ -5638,7 +6255,7 @@ router.post('/email/send', async (request, env) => {
       return new Response(JSON.stringify({ error: 'Failed to send email' }), { status: 500 });
     }
 
-    return { id, status: 'sent' };
+    return { id, status: 'sent', rate_limit_remaining: rateLimit.remaining };
   } catch (e) {
     await env.DB.prepare(`
       INSERT INTO email_log (id, app_subdomain, to_email, subject, template, status, error_message)
@@ -5810,6 +6427,547 @@ router.get('/email/log', async (request, env) => {
   `).bind(subdomain, limit, offset).all();
 
   return { items: logs.results, limit, offset };
+});
+
+// ============ SUBSCRIBER MANAGEMENT ENDPOINTS ============
+
+// POST /subscribers - Add a subscriber (public, rate limited)
+router.post('/subscribers', async (request, env) => {
+  const subdomain = getSubdomain(request);
+  if (!subdomain) {
+    return new Response(JSON.stringify({ error: 'Invalid origin' }), { status: 400 });
+  }
+
+  // Rate limit: 10 subscribes per minute per IP
+  const ip = request.headers.get('CF-Connecting-IP') || 'unknown';
+  const rateLimitKey = `subscribe_rate:${subdomain}:${ip}`;
+  const currentRate = await env.RATE_LIMITS.get(rateLimitKey);
+  const rateCount = currentRate ? parseInt(currentRate) : 0;
+
+  if (rateCount >= 10) {
+    return new Response(JSON.stringify({ error: 'Rate limit exceeded' }), { status: 429 });
+  }
+
+  await env.RATE_LIMITS.put(rateLimitKey, String(rateCount + 1), { expirationTtl: 60 });
+
+  const { email, tags, metadata } = await request.json();
+
+  if (!email) {
+    return new Response(JSON.stringify({ error: 'email is required' }), { status: 400 });
+  }
+
+  // Validate email format
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return new Response(JSON.stringify({ error: 'Invalid email address' }), { status: 400 });
+  }
+
+  // Check if subscriber already exists
+  const existing = await env.DB.prepare(
+    'SELECT id, status FROM subscribers WHERE app_subdomain = ? AND email = ?'
+  ).bind(subdomain, email).first();
+
+  if (existing) {
+    if (existing.status === 'active') {
+      return { id: existing.id, status: 'already_subscribed' };
+    }
+    // Reactivate unsubscribed subscriber
+    await env.DB.prepare(
+      'UPDATE subscribers SET status = ?, unsubscribed_at = NULL, updated_at = datetime("now") WHERE id = ?'
+    ).bind('active', existing.id).run();
+    return { id: existing.id, status: 'resubscribed' };
+  }
+
+  const id = generateId();
+  const unsubscribeToken = generateToken();
+
+  await env.DB.prepare(`
+    INSERT INTO subscribers (id, app_subdomain, email, tags, metadata, source, unsubscribe_token)
+    VALUES (?, ?, ?, ?, ?, 'form', ?)
+  `).bind(
+    id,
+    subdomain,
+    email,
+    tags ? JSON.stringify(tags) : null,
+    metadata ? JSON.stringify(metadata) : null,
+    unsubscribeToken
+  ).run();
+
+  return { id, status: 'subscribed' };
+});
+
+// GET /subscribers - List subscribers (owner/deploy_token only)
+router.get('/subscribers', async (request, env) => {
+  const subdomain = getSubdomain(request);
+  if (!subdomain) {
+    return new Response(JSON.stringify({ error: 'Invalid origin' }), { status: 400 });
+  }
+
+  const url = new URL(request.url);
+  const deploy_token = url.searchParams.get('deploy_token');
+
+  const user = await getSession(request, env);
+  const isOwner = user && await isAppOwner(env, subdomain, user.email);
+  const validToken = deploy_token && await validateDeployToken(env, subdomain, deploy_token);
+
+  if (!isOwner && !validToken) {
+    return new Response(JSON.stringify({ error: 'Not authorized' }), { status: 403 });
+  }
+
+  const tag = url.searchParams.get('tag');
+  const status = url.searchParams.get('status') || 'active';
+  const limit = Math.min(parseInt(url.searchParams.get('limit') || '100'), 1000);
+  const offset = parseInt(url.searchParams.get('offset') || '0');
+
+  let query = 'SELECT id, email, tags, status, metadata, source, subscribed_at, unsubscribed_at FROM subscribers WHERE app_subdomain = ?';
+  const params = [subdomain];
+
+  if (status && status !== 'all') {
+    query += ' AND status = ?';
+    params.push(status);
+  }
+
+  if (tag) {
+    query += ' AND tags LIKE ?';
+    params.push(`%"${tag}"%`);
+  }
+
+  // Get total count
+  const countQuery = query.replace('SELECT id, email, tags, status, metadata, source, subscribed_at, unsubscribed_at', 'SELECT COUNT(*) as total');
+  const countResult = await env.DB.prepare(countQuery).bind(...params).first();
+
+  query += ' ORDER BY subscribed_at DESC LIMIT ? OFFSET ?';
+  params.push(limit, offset);
+
+  const subscribers = await env.DB.prepare(query).bind(...params).all();
+
+  // Parse JSON fields
+  const items = subscribers.results.map(s => ({
+    ...s,
+    tags: s.tags ? JSON.parse(s.tags) : [],
+    metadata: s.metadata ? JSON.parse(s.metadata) : {},
+  }));
+
+  return { items, total: countResult?.total || 0, limit, offset };
+});
+
+// PUT /subscribers/:id - Update subscriber (owner/deploy_token only)
+router.put('/subscribers/:id', async (request, env) => {
+  const subdomain = getSubdomain(request);
+  if (!subdomain) {
+    return new Response(JSON.stringify({ error: 'Invalid origin' }), { status: 400 });
+  }
+
+  const { id } = request.params;
+  const { tags, metadata, status, deploy_token } = await request.json();
+
+  const user = await getSession(request, env);
+  const isOwner = user && await isAppOwner(env, subdomain, user.email);
+  const validToken = deploy_token && await validateDeployToken(env, subdomain, deploy_token);
+
+  if (!isOwner && !validToken) {
+    return new Response(JSON.stringify({ error: 'Not authorized' }), { status: 403 });
+  }
+
+  // Check subscriber exists
+  const existing = await env.DB.prepare(
+    'SELECT * FROM subscribers WHERE id = ? AND app_subdomain = ?'
+  ).bind(id, subdomain).first();
+
+  if (!existing) {
+    return new Response(JSON.stringify({ error: 'Subscriber not found' }), { status: 404 });
+  }
+
+  const updates = [];
+  const updateParams = [];
+
+  if (tags !== undefined) {
+    updates.push('tags = ?');
+    updateParams.push(JSON.stringify(tags));
+  }
+
+  if (metadata !== undefined) {
+    updates.push('metadata = ?');
+    updateParams.push(JSON.stringify(metadata));
+  }
+
+  if (status !== undefined && ['active', 'unsubscribed', 'bounced'].includes(status)) {
+    updates.push('status = ?');
+    updateParams.push(status);
+    if (status === 'unsubscribed') {
+      updates.push('unsubscribed_at = datetime("now")');
+    }
+  }
+
+  if (updates.length === 0) {
+    return new Response(JSON.stringify({ error: 'No valid fields to update' }), { status: 400 });
+  }
+
+  updates.push('updated_at = datetime("now")');
+  updateParams.push(id, subdomain);
+
+  await env.DB.prepare(
+    `UPDATE subscribers SET ${updates.join(', ')} WHERE id = ? AND app_subdomain = ?`
+  ).bind(...updateParams).run();
+
+  return { success: true, id };
+});
+
+// DELETE /subscribers/:id - Remove subscriber (owner/deploy_token only)
+router.delete('/subscribers/:id', async (request, env) => {
+  const subdomain = getSubdomain(request);
+  if (!subdomain) {
+    return new Response(JSON.stringify({ error: 'Invalid origin' }), { status: 400 });
+  }
+
+  const { id } = request.params;
+  const url = new URL(request.url);
+  const deploy_token = url.searchParams.get('deploy_token');
+
+  const user = await getSession(request, env);
+  const isOwner = user && await isAppOwner(env, subdomain, user.email);
+  const validToken = deploy_token && await validateDeployToken(env, subdomain, deploy_token);
+
+  if (!isOwner && !validToken) {
+    return new Response(JSON.stringify({ error: 'Not authorized' }), { status: 403 });
+  }
+
+  await env.DB.prepare(
+    'DELETE FROM subscribers WHERE id = ? AND app_subdomain = ?'
+  ).bind(id, subdomain).run();
+
+  return { success: true };
+});
+
+// GET /unsubscribe - One-click unsubscribe (public)
+router.get('/unsubscribe', async (request, env) => {
+  const url = new URL(request.url);
+  const token = url.searchParams.get('token');
+
+  if (!token) {
+    return new Response('<html><body><h1>Invalid unsubscribe link</h1></body></html>', {
+      status: 400,
+      headers: { 'Content-Type': 'text/html' }
+    });
+  }
+
+  const subscriber = await env.DB.prepare(
+    'SELECT id, app_subdomain, email FROM subscribers WHERE unsubscribe_token = ?'
+  ).bind(token).first();
+
+  if (!subscriber) {
+    return new Response('<html><body><h1>Invalid or expired unsubscribe link</h1></body></html>', {
+      status: 404,
+      headers: { 'Content-Type': 'text/html' }
+    });
+  }
+
+  await env.DB.prepare(
+    'UPDATE subscribers SET status = ?, unsubscribed_at = datetime("now"), updated_at = datetime("now") WHERE id = ?'
+  ).bind('unsubscribed', subscriber.id).run();
+
+  return new Response(`
+    <html>
+    <head>
+      <title>Unsubscribed</title>
+      <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 500px; margin: 100px auto; text-align: center; padding: 20px; }
+        h1 { color: #333; }
+        p { color: #666; }
+      </style>
+    </head>
+    <body>
+      <h1>You've been unsubscribed</h1>
+      <p>You will no longer receive emails from this app.</p>
+      <p style="margin-top: 30px; font-size: 12px; color: #999;">${subscriber.email}</p>
+    </body>
+    </html>
+  `, {
+    headers: { 'Content-Type': 'text/html' }
+  });
+});
+
+// ============ EMAIL DOMAINS ENDPOINTS (Paid Plans Only) ============
+
+// Helper to check if app has active subscription
+async function hasActiveSubscription(env, subdomain) {
+  const subscription = await env.DB.prepare(
+    'SELECT id FROM subscriptions WHERE app_subdomain = ? AND status = ?'
+  ).bind(subdomain, 'active').first();
+  return !!subscription;
+}
+
+// POST /email/domains - Add a custom email domain (paid only)
+router.post('/email/domains', async (request, env) => {
+  const subdomain = getSubdomain(request);
+  if (!subdomain) {
+    return new Response(JSON.stringify({ error: 'Invalid origin' }), { status: 400 });
+  }
+
+  const user = await getSession(request, env);
+  const isOwner = user && await isAppOwner(env, subdomain, user.email);
+
+  if (!isOwner) {
+    return new Response(JSON.stringify({ error: 'Only app owner can add email domains' }), { status: 403 });
+  }
+
+  // Check for paid subscription
+  if (!await hasActiveSubscription(env, subdomain)) {
+    return new Response(JSON.stringify({ error: 'Custom email domains require an active Pro subscription' }), { status: 402 });
+  }
+
+  const { domain } = await request.json();
+
+  if (!domain) {
+    return new Response(JSON.stringify({ error: 'domain is required' }), { status: 400 });
+  }
+
+  // Validate domain format
+  if (!/^[a-z0-9]+([\-\.]{1}[a-z0-9]+)*\.[a-z]{2,}$/i.test(domain)) {
+    return new Response(JSON.stringify({ error: 'Invalid domain format' }), { status: 400 });
+  }
+
+  // Check if domain already exists
+  const existing = await env.DB.prepare(
+    'SELECT id FROM email_domains WHERE app_subdomain = ? AND domain = ?'
+  ).bind(subdomain, domain).first();
+
+  if (existing) {
+    return new Response(JSON.stringify({ error: 'Domain already added' }), { status: 409 });
+  }
+
+  // Add domain to Resend
+  const resendRes = await fetch('https://api.resend.com/domains', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${env.RESEND_API_KEY}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ name: domain }),
+  });
+
+  if (!resendRes.ok) {
+    const error = await resendRes.text();
+    console.error('Resend domain creation failed:', error);
+    return new Response(JSON.stringify({ error: 'Failed to add domain to email provider' }), { status: 500 });
+  }
+
+  const resendData = await resendRes.json();
+
+  const id = generateId();
+  await env.DB.prepare(`
+    INSERT INTO email_domains (id, app_subdomain, domain, resend_domain_id, status, dns_records)
+    VALUES (?, ?, ?, ?, 'pending', ?)
+  `).bind(id, subdomain, domain, resendData.id, JSON.stringify(resendData.records || [])).run();
+
+  return {
+    id,
+    domain,
+    status: 'pending',
+    dns_records: resendData.records || [],
+    message: 'Add the following DNS records to your domain, then verify',
+  };
+});
+
+// GET /email/domains - List email domains
+router.get('/email/domains', async (request, env) => {
+  const subdomain = getSubdomain(request);
+  if (!subdomain) {
+    return new Response(JSON.stringify({ error: 'Invalid origin' }), { status: 400 });
+  }
+
+  const user = await getSession(request, env);
+  const isOwner = user && await isAppOwner(env, subdomain, user.email);
+
+  if (!isOwner) {
+    return new Response(JSON.stringify({ error: 'Not authorized' }), { status: 403 });
+  }
+
+  const domains = await env.DB.prepare(
+    'SELECT id, domain, status, dns_records, verified_at, created_at FROM email_domains WHERE app_subdomain = ?'
+  ).bind(subdomain).all();
+
+  const items = domains.results.map(d => ({
+    ...d,
+    dns_records: d.dns_records ? JSON.parse(d.dns_records) : [],
+  }));
+
+  return { domains: items };
+});
+
+// POST /email/domains/:id/verify - Verify DNS for custom domain
+router.post('/email/domains/:id/verify', async (request, env) => {
+  const subdomain = getSubdomain(request);
+  if (!subdomain) {
+    return new Response(JSON.stringify({ error: 'Invalid origin' }), { status: 400 });
+  }
+
+  const { id } = request.params;
+
+  const user = await getSession(request, env);
+  const isOwner = user && await isAppOwner(env, subdomain, user.email);
+
+  if (!isOwner) {
+    return new Response(JSON.stringify({ error: 'Not authorized' }), { status: 403 });
+  }
+
+  const emailDomain = await env.DB.prepare(
+    'SELECT * FROM email_domains WHERE id = ? AND app_subdomain = ?'
+  ).bind(id, subdomain).first();
+
+  if (!emailDomain) {
+    return new Response(JSON.stringify({ error: 'Domain not found' }), { status: 404 });
+  }
+
+  if (emailDomain.status === 'verified') {
+    return { status: 'verified', message: 'Domain already verified' };
+  }
+
+  // Trigger verification with Resend
+  const resendRes = await fetch(`https://api.resend.com/domains/${emailDomain.resend_domain_id}/verify`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${env.RESEND_API_KEY}`,
+    },
+  });
+
+  if (!resendRes.ok) {
+    const error = await resendRes.text();
+    console.error('Resend domain verification failed:', error);
+    return new Response(JSON.stringify({ error: 'Verification failed. Please check your DNS records.' }), { status: 400 });
+  }
+
+  // Check domain status
+  const statusRes = await fetch(`https://api.resend.com/domains/${emailDomain.resend_domain_id}`, {
+    headers: {
+      'Authorization': `Bearer ${env.RESEND_API_KEY}`,
+    },
+  });
+
+  if (statusRes.ok) {
+    const statusData = await statusRes.json();
+
+    if (statusData.status === 'verified') {
+      await env.DB.prepare(
+        'UPDATE email_domains SET status = ?, verified_at = datetime("now") WHERE id = ?'
+      ).bind('verified', id).run();
+
+      return { status: 'verified', message: 'Domain verified successfully' };
+    }
+
+    return {
+      status: statusData.status,
+      message: 'Verification in progress. DNS records may take time to propagate.',
+      dns_records: statusData.records || [],
+    };
+  }
+
+  return { status: 'pending', message: 'Verification in progress' };
+});
+
+// DELETE /email/domains/:id - Remove custom domain
+router.delete('/email/domains/:id', async (request, env) => {
+  const subdomain = getSubdomain(request);
+  if (!subdomain) {
+    return new Response(JSON.stringify({ error: 'Invalid origin' }), { status: 400 });
+  }
+
+  const { id } = request.params;
+
+  const user = await getSession(request, env);
+  const isOwner = user && await isAppOwner(env, subdomain, user.email);
+
+  if (!isOwner) {
+    return new Response(JSON.stringify({ error: 'Not authorized' }), { status: 403 });
+  }
+
+  const emailDomain = await env.DB.prepare(
+    'SELECT resend_domain_id FROM email_domains WHERE id = ? AND app_subdomain = ?'
+  ).bind(id, subdomain).first();
+
+  if (!emailDomain) {
+    return new Response(JSON.stringify({ error: 'Domain not found' }), { status: 404 });
+  }
+
+  // Delete from Resend
+  if (emailDomain.resend_domain_id) {
+    await fetch(`https://api.resend.com/domains/${emailDomain.resend_domain_id}`, {
+      method: 'DELETE',
+      headers: {
+        'Authorization': `Bearer ${env.RESEND_API_KEY}`,
+      },
+    });
+  }
+
+  await env.DB.prepare(
+    'DELETE FROM email_domains WHERE id = ?'
+  ).bind(id).run();
+
+  return { success: true };
+});
+
+// ============ EMAIL SETTINGS ENDPOINTS ============
+
+// PUT /email/settings - Update email settings (reply-to, from name)
+router.put('/email/settings', async (request, env) => {
+  const subdomain = getSubdomain(request);
+  if (!subdomain) {
+    return new Response(JSON.stringify({ error: 'Invalid origin' }), { status: 400 });
+  }
+
+  const { email_reply_to, email_from_name, deploy_token } = await request.json();
+
+  const user = await getSession(request, env);
+  const isOwner = user && await isAppOwner(env, subdomain, user.email);
+  const validToken = deploy_token && await validateDeployToken(env, subdomain, deploy_token);
+
+  if (!isOwner && !validToken) {
+    return new Response(JSON.stringify({ error: 'Not authorized' }), { status: 403 });
+  }
+
+  // Validate reply-to email if provided
+  if (email_reply_to && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email_reply_to)) {
+    return new Response(JSON.stringify({ error: 'Invalid reply-to email address' }), { status: 400 });
+  }
+
+  // Upsert app settings
+  await env.DB.prepare(`
+    INSERT INTO app_settings (app_subdomain, email_reply_to, email_from_name, updated_at)
+    VALUES (?, ?, ?, datetime('now'))
+    ON CONFLICT(app_subdomain) DO UPDATE SET
+      email_reply_to = COALESCE(excluded.email_reply_to, email_reply_to),
+      email_from_name = COALESCE(excluded.email_from_name, email_from_name),
+      updated_at = datetime('now')
+  `).bind(subdomain, email_reply_to || null, email_from_name || null).run();
+
+  return { success: true, email_reply_to, email_from_name };
+});
+
+// GET /email/settings - Get email settings
+router.get('/email/settings', async (request, env) => {
+  const subdomain = getSubdomain(request);
+  if (!subdomain) {
+    return new Response(JSON.stringify({ error: 'Invalid origin' }), { status: 400 });
+  }
+
+  const url = new URL(request.url);
+  const deploy_token = url.searchParams.get('deploy_token');
+
+  const user = await getSession(request, env);
+  const isOwner = user && await isAppOwner(env, subdomain, user.email);
+  const validToken = deploy_token && await validateDeployToken(env, subdomain, deploy_token);
+
+  if (!isOwner && !validToken) {
+    return new Response(JSON.stringify({ error: 'Not authorized' }), { status: 403 });
+  }
+
+  const settings = await env.DB.prepare(
+    'SELECT email_reply_to, email_from_name FROM app_settings WHERE app_subdomain = ?'
+  ).bind(subdomain).first();
+
+  return {
+    email_reply_to: settings?.email_reply_to || null,
+    email_from_name: settings?.email_from_name || null,
+  };
 });
 
 // ============ AGGREGATION ENDPOINTS ============

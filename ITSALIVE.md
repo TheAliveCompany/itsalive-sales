@@ -850,3 +850,183 @@ await fetch('/_og/routes', {
 | `title_field` | No | Document field for og:title and page title |
 | `description_field` | No | Document field for og:description |
 | `image_field` | No | Document field for og:image |
+
+## Subscribers (Newsletter/Mailing List)
+
+Collect and manage email subscribers for newsletters, notifications, and marketing.
+
+### Collect Subscribers (Public)
+
+Anyone can subscribe via a form on your site. Rate limited to 10 subscriptions per minute per IP.
+
+```javascript
+// Add subscriber from a form (no auth required)
+await fetch('/_subscribers', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    email: 'user@example.com',
+    tags: ['newsletter', 'product-updates'],  // Optional
+    metadata: { name: 'John', company: 'Acme' }  // Optional
+  })
+});
+// Returns: { id: '...', status: 'subscribed' | 'already_subscribed' | 'resubscribed' }
+```
+
+### List Subscribers (Owner Only)
+
+```javascript
+// Get all active subscribers
+const { items, total } = await fetch('/_subscribers', {
+  credentials: 'include'
+}).then(r => r.json());
+
+// Filter by tag and status
+const { items } = await fetch('/_subscribers?tag=newsletter&status=active&limit=100', {
+  credentials: 'include'
+}).then(r => r.json());
+
+// status options: 'active', 'unsubscribed', 'bounced', 'all'
+```
+
+### Update Subscriber (Owner Only)
+
+```javascript
+await fetch('/_subscribers/subscriber-id', {
+  method: 'PUT',
+  headers: { 'Content-Type': 'application/json' },
+  credentials: 'include',
+  body: JSON.stringify({
+    tags: ['newsletter', 'vip'],
+    metadata: { name: 'John Smith' },
+    status: 'active'  // or 'unsubscribed', 'bounced'
+  })
+});
+```
+
+### Delete Subscriber (Owner Only)
+
+```javascript
+await fetch('/_subscribers/subscriber-id', {
+  method: 'DELETE',
+  credentials: 'include'
+});
+```
+
+### Unsubscribe Links
+
+When you send email to a subscriber, an unsubscribe link is automatically added. Users who click it are marked as `unsubscribed` and won't receive further emails.
+
+## Email Sending
+
+Send transactional and marketing emails. Supports templates, reply-to addresses, and automatic spam prevention.
+
+### Send Email (Owner/Deploy Token)
+
+```javascript
+await fetch('/_email/send', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  credentials: 'include',
+  body: JSON.stringify({
+    to: 'user@example.com',
+    subject: 'Welcome!',
+    html: '<h1>Hello</h1><p>Thanks for signing up.</p>',
+    reply_to: 'support@mycompany.com'  // Optional per-email override
+  })
+});
+```
+
+### Email Rate Limits
+
+- **100 emails per hour per app** - protects against abuse
+- Spam detection using heuristics and AI (borderline cases)
+- Response includes `rate_limit_remaining` count
+
+### Email Settings (Reply-To & From Name)
+
+Set default reply-to and from name for all emails from your app.
+
+```javascript
+// Set email settings (via browser or deploy token)
+await fetch('/_email/settings', {
+  method: 'PUT',
+  headers: { 'Content-Type': 'application/json' },
+  credentials: 'include',
+  body: JSON.stringify({
+    email_reply_to: 'support@mycompany.com',
+    email_from_name: 'MyApp Team'
+  })
+});
+
+// Get current settings
+const settings = await fetch('/_email/settings', {
+  credentials: 'include'
+}).then(r => r.json());
+```
+
+## Custom Email Domains (Pro Plan Only)
+
+Send emails from your own domain (e.g., `updates@mycompany.com`) instead of `noreply@itsalive.co`.
+
+### Add Domain
+
+```javascript
+const { id, dns_records } = await fetch('/_email/domains', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  credentials: 'include',
+  body: JSON.stringify({ domain: 'mycompany.com' })
+}).then(r => r.json());
+
+// Returns DNS records to add to your domain
+// dns_records: [{ type: 'TXT', name: '...', value: '...' }, ...]
+```
+
+### Verify Domain
+
+After adding DNS records, verify:
+
+```javascript
+await fetch('/_email/domains/domain-id/verify', {
+  method: 'POST',
+  credentials: 'include'
+});
+// Returns: { status: 'verified' | 'pending', message: '...' }
+```
+
+### List Domains
+
+```javascript
+const { domains } = await fetch('/_email/domains', {
+  credentials: 'include'
+}).then(r => r.json());
+// domains: [{ id, domain, status, dns_records, verified_at }]
+```
+
+### Delete Domain
+
+```javascript
+await fetch('/_email/domains/domain-id', {
+  method: 'DELETE',
+  credentials: 'include'
+});
+```
+
+## Email Quick Reference
+
+| Action | Method | Endpoint | Auth |
+|--------|--------|----------|------|
+| Add subscriber | POST | `/_subscribers` | Public (rate limited) |
+| List subscribers | GET | `/_subscribers` | Owner/token |
+| Update subscriber | PUT | `/_subscribers/:id` | Owner/token |
+| Delete subscriber | DELETE | `/_subscribers/:id` | Owner/token |
+| Unsubscribe | GET | `/unsubscribe?token=X` | Public |
+| Send email | POST | `/_email/send` | Owner/token |
+| Send bulk | POST | `/_email/send-bulk` | Owner/token |
+| Get settings | GET | `/_email/settings` | Owner/token |
+| Set settings | PUT | `/_email/settings` | Owner/token |
+| Add domain | POST | `/_email/domains` | Owner (Pro) |
+| List domains | GET | `/_email/domains` | Owner |
+| Verify domain | POST | `/_email/domains/:id/verify` | Owner |
+| Delete domain | DELETE | `/_email/domains/:id` | Owner |

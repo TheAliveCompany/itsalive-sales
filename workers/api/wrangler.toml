@@ -30,8 +30,8 @@ dataset = "itsalive-analytics"
 
 # Cron trigger for processing scheduled jobs and cron tasks
 # NOTE: Requires workers.dev subdomain - enable in Cloudflare dashboard first
-# [triggers]
-# crons = ["* * * * *"]  # Every minute
+[triggers]
+crons = ["* * * * *"]  # Every minute
 
 # Required secrets (add with: wrangler secret put SECRET_NAME):
 # - CLOUDFLARE_API_TOKEN: API token with Zone:Edit, DNS:Edit, Workers Routes:Edit permissions
