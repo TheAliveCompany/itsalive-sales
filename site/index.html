@@ -21,8 +21,17 @@
   <meta name="twitter:image" content="https://itsalive.co/og-image.png">
   <link rel="stylesheet" href="/styles.css">
   <style>
+    /* Push nav below banner and add body padding */
+    nav { top: 42px !important; }
+    body { padding-top: 42px; }
+
     /* Launch Banner */
     .launch-banner {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 101;
       background: linear-gradient(90deg, #7b2dff 0%, #00d4ff 50%, #ff2d7b 100%);
       color: #fff;
       text-align: center;
