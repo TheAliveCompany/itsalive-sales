@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Crosslet - Word Puzzle Game Example - itsalive.co</title>
+  <meta name="description" content="See how crosslet.itsalive.co was built with Claude Code - the prompt, the features, and how itsalive streamlined deployment.">
+
+  <!-- Open Graph -->
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://itsalive.co/examples/crosslet/">
+  <meta property="og:title" content="Crosslet - Word Puzzle Game Example - itsalive.co">
+  <meta property="og:description" content="See how crosslet.itsalive.co was built with Claude Code - the prompt, the features, and how itsalive streamlined deployment.">
+  <meta property="og:image" content="https://itsalive.co/og-image.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Crosslet - Word Puzzle Game Example - itsalive.co">
+  <meta name="twitter:description" content="See how crosslet.itsalive.co was built with Claude Code - the prompt, the features, and how itsalive streamlined deployment.">
+  <meta name="twitter:image" content="https://itsalive.co/og-image.png">
+
+  <link rel="stylesheet" href="/styles.css">
+  <style>
+    .example-hero {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 3rem;
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 2rem;
+      align-items: start;
+    }
+    @media (max-width: 900px) {
+      .example-hero {
+        grid-template-columns: 1fr;
+      }
+    }
+    .example-browser {
+      width: 100%;
+      background: #111;
+      border: 1px solid #222;
+      border-radius: 12px;
+      overflow: hidden;
+      position: sticky;
+      top: 100px;
+    }
+    .browser-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 12px 16px;
+      background: #0d0d0d;
+      border-bottom: 1px solid #222;
+    }
+    .browser-btn {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+    }
+    .browser-btn.red { background: #ff5f57; }
+    .browser-btn.yellow { background: #ffbd2e; }
+    .browser-btn.green { background: #28ca41; }
+    .browser-url {
+      margin-left: auto;
+      color: #666;
+      font-size: 0.85rem;
+      font-family: 'SF Mono', Monaco, monospace;
+    }
+    .browser-content {
+      width: 100%;
+      height: 500px;
+      border: none;
+      background: #0a0a0a;
+    }
+    .example-details h1 {
+      font-size: 2.5rem;
+      margin-bottom: 0.5rem;
+    }
+    .example-tagline {
+      color: #888;
+      font-size: 1.2rem;
+      margin-bottom: 2rem;
+    }
+    .visit-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.75rem 1.5rem;
+      background: #fff;
+      color: #000;
+      border-radius: 8px;
+      text-decoration: none;
+      font-weight: 600;
+      margin-bottom: 3rem;
+      transition: transform 0.2s;
+    }
+    .visit-btn:hover {
+      transform: translateY(-2px);
+    }
+    .section-title {
+      font-size: 1.1rem;
+      color: #7b2dff;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      margin-bottom: 1rem;
+    }
+    .prompt-box {
+      background: #111;
+      border: 1px solid #222;
+      border-radius: 8px;
+      padding: 1.5rem;
+      margin-bottom: 2rem;
+      font-family: 'SF Mono', Monaco, monospace;
+      font-size: 0.9rem;
+      color: #ccc;
+      line-height: 1.7;
+      white-space: pre-wrap;
+    }
+    .features-used {
+      margin-bottom: 2rem;
+    }
+    .feature-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 1rem;
+      padding: 1rem 0;
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+    }
+    .feature-item:last-child {
+      border-bottom: none;
+    }
+    .feature-icon {
+      font-size: 1.5rem;
+      width: 40px;
+      text-align: center;
+    }
+    .feature-info h4 {
+      font-size: 1rem;
+      color: #fff;
+      margin-bottom: 0.25rem;
+    }
+    .feature-info p {
+      color: #888;
+      font-size: 0.9rem;
+    }
+    .comparison {
+      margin-bottom: 3rem;
+    }
+    .comparison-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem;
+    }
+    @media (max-width: 600px) {
+      .comparison-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+    .comparison-box {
+      padding: 1.5rem;
+      border-radius: 8px;
+    }
+    .comparison-box.without {
+      background: rgba(255, 45, 123, 0.1);
+      border: 1px solid rgba(255, 45, 123, 0.3);
+    }
+    .comparison-box.with {
+      background: rgba(39, 202, 64, 0.1);
+      border: 1px solid rgba(39, 202, 64, 0.3);
+    }
+    .comparison-box h4 {
+      font-size: 0.9rem;
+      margin-bottom: 1rem;
+      color: #888;
+    }
+    .comparison-box ul {
+      list-style: none;
+      color: #aaa;
+      font-size: 0.9rem;
+    }
+    .comparison-box li {
+      padding: 0.35rem 0;
+    }
+    .comparison-box.without li::before {
+      content: "- ";
+      color: #ff2d7b;
+    }
+    .comparison-box.with li::before {
+      content: "+ ";
+      color: #27ca40;
+    }
+  </style>
+</head>
+<body>
+  <nav>
+    <a href="/" class="nav-logo">itsalive.co</a>
+    <div class="nav-links">
+      <a href="/#pricing">Pricing</a>
+      <a href="/how-it-works/">How it Works</a>
+      <a href="/examples/">Examples</a>
+      <a href="/guides/">Guides</a>
+      <a href="/support/">Support</a>
+      <a href="https://dashboard.itsalive.co" class="nav-btn">Login</a>
+    </div>
+  </nav>
+
+  <div class="page-header">
+    <p class="subtitle"><a href="/examples/" style="color:#888;text-decoration:none;">&larr; All Examples</a></p>
+  </div>
+
+  <div class="example-hero">
+    <div class="example-browser">
+      <div class="browser-header">
+        <div class="browser-btn red"></div>
+        <div class="browser-btn yellow"></div>
+        <div class="browser-btn green"></div>
+        <div class="browser-url">crosslet.net</div>
+      </div>
+      <iframe src="https://crosslet.net" class="browser-content" title="crosslet.net"></iframe>
+    </div>
+
+    <div class="example-details">
+      <h1>Crosslet</h1>
+      <p class="example-tagline">A daily word puzzle game where players place letters on a grid to form valid words</p>
+
+      <a href="https://crosslet.net" target="_blank" class="visit-btn">
+        Visit Site
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
+          <polyline points="15 3 21 3 21 9"></polyline>
+          <line x1="10" y1="14" x2="21" y2="3"></line>
+        </svg>
+      </a>
+
+      <div class="section-title">The Prompt</div>
+      <div class="prompt-box">Build a daily word puzzle game like a mini crossword. Players get a set of letters and must place them all on a grid to form valid words. Include user authentication, leaderboards, and a puzzle picker.</div>
+
+      <div class="section-title">itsalive Features Used</div>
+      <div class="features-used">
+        <div class="feature-item">
+          <div class="feature-icon">🔐</div>
+          <div class="feature-info">
+            <h4>Auth</h4>
+            <p>Magic link email authentication for user accounts and leaderboard participation</p>
+          </div>
+        </div>
+        <div class="feature-item">
+          <div class="feature-icon">💾</div>
+          <div class="feature-info">
+            <h4>Database</h4>
+            <p>Stores user profiles, display names, and daily puzzle completions with word counts for the leaderboard</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="section-title">What itsalive Eliminated</div>
+      <div class="comparison">
+        <div class="comparison-grid">
+          <div class="comparison-box without">
+            <h4>Without itsalive</h4>
+            <ul>
+              <li>Set up a backend server (Node.js/Express or similar)</li>
+              <li>Configure email service (SendGrid, SES) for magic link authentication</li>
+              <li>Set up and manage a database (PostgreSQL, MongoDB) for user data and scores</li>
+              <li>Implement session management and authentication middleware</li>
+              <li>Deploy and maintain server infrastructure</li>
+            </ul>
+          </div>
+          <div class="comparison-box with">
+            <h4>With itsalive</h4>
+            <ul>
+              <li>Auth just works with simple API calls - magic links sent automatically</li>
+              <li>Database ready instantly with public/private collection settings</li>
+              <li>Leaderboard queries with sorting and filtering built-in</li>
+              <li>Zero backend code needed - pure static frontend</li>
+              <li>Instant deployment with npx itsalive-co</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <div class="section-title">Build Time</div>
+      <p style="color:#888;margin-bottom:2rem;">Built in a few hours with Claude Code</p>
+    </div>
+  </div>
+
+  <footer>
+    <p>Built for vibe coders everywhere</p>
+    <p class="copyright">&copy; 2026 The Alive Company</p>
+  </footer>
+</body>
+</html>
