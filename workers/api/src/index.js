@@ -4461,9 +4461,9 @@ router.get('/verify', async (request, env) => {
     `).bind(ownerId, FREE_CREDITS, FREE_CREDITS).run();
   }
 
-  // Create or update app
+  // Create app if it doesn't exist (preserve existing custom_domain, etc.)
   await env.DB.prepare(
-    'INSERT OR REPLACE INTO apps (subdomain, owner_id) VALUES (?, ?)'
+    'INSERT OR IGNORE INTO apps (subdomain, owner_id) VALUES (?, ?)'
   ).bind(pending.subdomain, owner.id).run();
 
   return new Response(`
