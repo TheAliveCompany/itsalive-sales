@@ -135,6 +135,22 @@ CREATE TABLE IF NOT EXISTS platform_feedback (
   reviewed_at DATETIME
 );
 
+-- Case study submissions from deployed apps
+CREATE TABLE IF NOT EXISTS case_studies (
+  id TEXT PRIMARY KEY,
+  app_subdomain TEXT NOT NULL,
+  app_name TEXT NOT NULL,
+  tagline TEXT,
+  prompt TEXT NOT NULL,
+  features_used TEXT,
+  without_itsalive TEXT,
+  with_itsalive TEXT,
+  build_time TEXT,
+  status TEXT DEFAULT 'pending',
+  published_at DATETIME,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
 -- User file uploads
 CREATE TABLE IF NOT EXISTS uploads (
   id TEXT PRIMARY KEY,
@@ -292,6 +308,7 @@ CREATE INDEX IF NOT EXISTS idx_apps_custom_domain ON apps(custom_domain);
 CREATE INDEX IF NOT EXISTS idx_deploy_tokens_subdomain ON deploy_tokens(subdomain);
 CREATE INDEX IF NOT EXISTS idx_bugs_status ON platform_bugs(status);
 CREATE INDEX IF NOT EXISTS idx_feedback_status ON platform_feedback(status);
+CREATE INDEX IF NOT EXISTS idx_case_studies_status ON case_studies(status);
 CREATE INDEX IF NOT EXISTS idx_uploads_subdomain ON uploads(app_subdomain);
 CREATE INDEX IF NOT EXISTS idx_uploads_user ON uploads(app_subdomain, created_by);
 CREATE INDEX IF NOT EXISTS idx_email_log_subdomain ON email_log(app_subdomain, created_at);

@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Examples - itsalive.co</title>
+  <meta name="description" content="Real apps built with itsalive.co - see the prompts that created them and how itsalive streamlined deployment.">
+
+  <!-- Open Graph -->
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://itsalive.co/examples/">
+  <meta property="og:title" content="Examples - itsalive.co">
+  <meta property="og:description" content="Real apps built with itsalive.co - see the prompts that created them and how itsalive streamlined deployment.">
+  <meta property="og:image" content="https://itsalive.co/og-image.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Examples - itsalive.co">
+  <meta name="twitter:description" content="Real apps built with itsalive.co - see the prompts that created them and how itsalive streamlined deployment.">
+  <meta name="twitter:image" content="https://itsalive.co/og-image.png">
+
+  <link rel="stylesheet" href="/styles.css">
+  <style>
+    .example-card {
+      display: block;
+      background: rgba(255,255,255,0.02);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 12px;
+      overflow: hidden;
+      text-decoration: none;
+      transition: border-color 0.2s, transform 0.2s;
+      margin-bottom: 2rem;
+    }
+    .example-card:hover {
+      border-color: #7b2dff;
+      transform: translateY(-2px);
+    }
+    .example-preview {
+      width: 100%;
+      height: 250px;
+      border: none;
+      background: #0a0a0a;
+      pointer-events: none;
+    }
+    .example-content {
+      padding: 1.5rem 2rem 2rem;
+    }
+    .example-content h3 {
+      font-size: 1.3rem;
+      color: #fff;
+      margin-bottom: 0.5rem;
+    }
+    .example-content p {
+      color: #888;
+      font-size: 1rem;
+      margin-bottom: 0.75rem;
+    }
+    .example-tags {
+      display: flex;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+    }
+    .example-tag {
+      padding: 0.25rem 0.75rem;
+      background: rgba(123, 45, 255, 0.15);
+      color: #7b2dff;
+      border-radius: 4px;
+      font-size: 0.8rem;
+      font-weight: 500;
+    }
+    .examples-list {
+      padding: 2rem 2rem 6rem;
+      max-width: 900px;
+      margin: 0 auto;
+    }
+    .examples-intro {
+      text-align: center;
+      margin-bottom: 3rem;
+      padding: 0 1rem;
+    }
+    .examples-intro p {
+      color: #888;
+      font-size: 1.1rem;
+      max-width: 600px;
+      margin: 0 auto;
+    }
+  </style>
+</head>
+<body>
+  <nav>
+    <a href="/" class="nav-logo">itsalive.co</a>
+    <div class="nav-links">
+      <a href="/#pricing">Pricing</a>
+      <a href="/how-it-works/">How it Works</a>
+      <a href="/examples/">Examples</a>
+      <a href="/guides/">Guides</a>
+      <a href="/support/">Support</a>
+      <a href="https://dashboard.itsalive.co" class="nav-btn">Login</a>
+    </div>
+  </nav>
+
+  <div class="page-header">
+    <h1>Examples</h1>
+    <p class="subtitle">Real apps built with Claude Code + itsalive.co</p>
+  </div>
+
+  <div class="examples-intro">
+    <p>Each example includes the original prompt, the features itsalive enabled, and what would have been needed without it.</p>
+  </div>
+
+  <div class="examples-list">
+    <a href="/examples/eat/" class="example-card">
+      <iframe src="https://eat.itsalive.co" class="example-preview" title="eat.itsalive.co"></iframe>
+      <div class="example-content">
+        <h3>Eat - Recipe Manager</h3>
+        <p>Your Recipes, Beautifully Kept. Save recipes from URLs, photos, or text. AI parses ingredients and generates images.</p>
+        <div class="example-tags">
+          <span class="example-tag">Auth</span>
+          <span class="example-tag">Database</span>
+          <span class="example-tag">AI</span>
+          <span class="example-tag">File Uploads</span>
+        </div>
+      </div>
+    </a>
+
+    <!-- More examples will be added here -->
+  </div>
+
+  <footer>
+    <p>Built for vibe coders everywhere</p>
+    <p class="copyright">&copy; 2026 The Alive Company</p>
+  </footer>
+</body>
+</html>

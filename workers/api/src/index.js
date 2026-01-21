@@ -3227,6 +3227,39 @@ await fetch('/_itsalive/feedback', {
 
 **Best practices:** Report bugs immediately when encountered. Submit feedback when you wish for a feature.
 
+### Submit a case study
+If the app you built is interesting or showcases itsalive features well, submit it as a case study. Featured apps appear on itsalive.co/examples/ and help others learn what's possible.
+
+\`\`\`javascript
+await fetch('/_itsalive/case-study', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    app_name: 'My App Name',
+    tagline: 'A brief description of what it does',
+    prompt: 'The original prompt given to Claude Code to build this app',
+    features_used: [
+      { name: 'Auth', description: 'How auth is used in this app' },
+      { name: 'Database', description: 'How the database is used' },
+      { name: 'AI', description: 'How AI features are used' }
+    ],
+    without_itsalive: [
+      'What would have been needed without itsalive',
+      'e.g., Set up Firebase Auth and configure OAuth',
+      'e.g., Deploy PostgreSQL and manage connections'
+    ],
+    with_itsalive: [
+      'Benefits of using itsalive',
+      'e.g., Auth just works with one API call',
+      'e.g., Database ready instantly, no setup'
+    ],
+    build_time: 'Approximately how long it took to build (e.g., "3 hours")'
+  })
+});
+\`\`\`
+
+**When to submit:** After completing an app that demonstrates interesting use of itsalive features. Good candidates include apps with auth + database, AI-powered apps, or creative uses of the platform.
+
 ## Configuring Collection Settings (for Claude)
 
 Claude can configure collections automatically using the deploy token from the \`.itsalive\` file.
@@ -6265,6 +6298,52 @@ router.post('/_itsalive/feedback', async (request, env) => {
   );
 
   return { id, status: 'received', message: 'Feedback submitted for review' };
+});
+
+// POST /_itsalive/case-study - Submit a case study for the examples page
+router.post('/_itsalive/case-study', async (request, env) => {
+  const subdomain = getSubdomain(request);
+  const { app_name, tagline, prompt, features_used, without_itsalive, with_itsalive, build_time } = await request.json();
+
+  if (!app_name || !prompt) {
+    return new Response(JSON.stringify({ error: 'app_name and prompt are required' }), { status: 400 });
+  }
+
+  const id = generateId();
+  await env.DB.prepare(`
+    INSERT INTO case_studies (id, app_subdomain, app_name, tagline, prompt, features_used, without_itsalive, with_itsalive, build_time)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).bind(
+    id,
+    subdomain || 'unknown',
+    app_name,
+    tagline || null,
+    prompt,
+    features_used ? JSON.stringify(features_used) : null,
+    without_itsalive ? JSON.stringify(without_itsalive) : null,
+    with_itsalive ? JSON.stringify(with_itsalive) : null,
+    build_time || null
+  ).run();
+
+  // Notify about new case study submission
+  await sendEmail(
+    env,
+    'sam@itsalive.co',
+    `[Case Study] ${app_name} - ${subdomain}.itsalive.co`,
+    `<div style="font-family: system-ui, sans-serif;">
+      <h2>New Case Study Submission</h2>
+      <p><strong>App:</strong> <a href="https://${subdomain}.itsalive.co">${app_name}</a> (${subdomain}.itsalive.co)</p>
+      ${tagline ? `<p><strong>Tagline:</strong> ${tagline}</p>` : ''}
+      <h3>The Prompt</h3>
+      <pre style="background:#f5f5f5;padding:1rem;overflow-x:auto;white-space:pre-wrap;">${prompt}</pre>
+      ${features_used ? `<h3>Features Used</h3><ul>${features_used.map(f => `<li><strong>${f.name}:</strong> ${f.description}</li>`).join('')}</ul>` : ''}
+      ${without_itsalive ? `<h3>Without itsalive</h3><ul>${without_itsalive.map(item => `<li>${item}</li>`).join('')}</ul>` : ''}
+      ${with_itsalive ? `<h3>With itsalive</h3><ul>${with_itsalive.map(item => `<li>${item}</li>`).join('')}</ul>` : ''}
+      ${build_time ? `<p><strong>Build Time:</strong> ${build_time}</p>` : ''}
+    </div>`
+  );
+
+  return { id, status: 'received', message: 'Case study submitted for review. It may be featured on itsalive.co/examples/' };
 });
 
 // ============ FILE UPLOAD ENDPOINTS ============
