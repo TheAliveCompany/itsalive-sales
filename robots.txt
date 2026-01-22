@@ -1,0 +1,7 @@
+# robots.txt for itsalive.co
+
+User-agent: *
+Allow: /
+
+# Sitemap location
+Sitemap: https://itsalive.co/sitemap.xml

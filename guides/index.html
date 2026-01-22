@@ -4,59 +4,80 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Guides - itsalive.co</title>
-  <meta name="description" content="Learn how to build with itsalive.co - tutorials for authentication, databases, AI, and more.">
+  <meta name="description" content="Quick tutorials for auth, databases, AI, email, and more. Copy-paste examples to add features without the setup overhead.">
+  <meta name="robots" content="index, follow">
+  <meta name="theme-color" content="#0a0a0b">
+  <link rel="canonical" href="https://itsalive.co/guides/">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://itsalive.co/guides/">
+  <meta property="og:title" content="Guides - itsalive.co">
+  <meta property="og:description" content="Quick tutorials for auth, databases, AI, email, and more. Copy-paste examples to add features without the setup overhead.">
+  <meta property="og:image" content="https://itsalive.co/og-image.png">
+  <meta property="og:site_name" content="itsalive.co">
+
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:site" content="@TheAliveCo">
+  <meta name="twitter:title" content="Guides - itsalive.co">
+  <meta name="twitter:description" content="Quick tutorials for auth, databases, AI, email, and more. Copy-paste examples to add features without the setup overhead.">
+
   <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
-  <nav>
-    <a href="/" class="nav-logo">itsalive.co</a>
-    <div class="nav-links">
-      <a href="/how-it-works/">How it Works</a>
-      <a href="/guides/">Guides</a>
-      <a href="/support/">Support</a>
-      <a href="https://itsalive.co/dashboard" class="nav-btn">Login</a>
-    </div>
-  </nav>
+  <header>
+    <nav aria-label="Main navigation">
+      <a href="/" class="nav-logo" aria-label="itsalive.co home">itsalive.co</a>
+      <div class="nav-links">
+        <a href="/how-it-works/">How it Works</a>
+        <a href="/guides/">Guides</a>
+        <a href="/support/">Support</a>
+        <a href="https://itsalive.co/dashboard" class="nav-btn">Login</a>
+      </div>
+    </nav>
+  </header>
+  <main>
 
   <div class="page-header">
     <h1>Guides</h1>
-    <p class="subtitle">Step-by-step tutorials to help you build</p>
+    <p class="subtitle">Add features without the setup detour</p>
   </div>
 
   <div class="guides-list">
-    <a href="/guides/vibe-code-first-app/" class="guide-card">
-      <h3>How to Vibe Code Your First Web App with Claude Code</h3>
-      <p>Learn how to build and deploy a complete web app using natural language and AI. No coding experience required.</p>
-      <span class="guide-meta">10 min read</span>
-    </a>
-
     <a href="/guides/getting-started/" class="guide-card">
       <h3>Getting Started</h3>
-      <p>Deploy your first app in under a minute. Learn the basics of itsalive.co and get your project live.</p>
+      <p>From folder to live URL in one command. No accounts to create, no config files to write.</p>
       <span class="guide-meta">5 min read</span>
     </a>
 
+    <a href="/guides/vibe-code-first-app/" class="guide-card">
+      <h3>Build Your First App with Claude Code</h3>
+      <p>Go from idea to deployed app without leaving the build zone. Prototype to production in one session.</p>
+      <span class="guide-meta">10 min read</span>
+    </a>
+
     <a href="/guides/authentication/" class="guide-card">
-      <h3>Add Authentication to Your App</h3>
-      <p>Add magic link login to let users sign in with their email. No passwords, no OAuth setup.</p>
+      <h3>Add Authentication</h3>
+      <p>Magic link login in one API call. No Auth0 dashboard, no OAuth flows, no session token headaches.</p>
       <span class="guide-meta">8 min read</span>
     </a>
 
     <a href="/guides/add-database/" class="guide-card">
-      <h3>How Do I Add a Database to My Vibe Code App?</h3>
-      <p>Store and retrieve data with our simple API. Save user preferences, content, and application state.</p>
+      <h3>Add a Database</h3>
+      <p>Save and query data without Postgres, Prisma, or migration scripts. Just JSON in, JSON out.</p>
       <span class="guide-meta">10 min read</span>
     </a>
 
     <a href="/guides/custom-domains/" class="guide-card">
       <h3>Connect a Custom Domain</h3>
-      <p>Use your own domain instead of a .itsalive.co subdomain. Professional URLs for your app.</p>
+      <p>Your own domain, no DNS debugging. Point it at us and you're done.</p>
       <span class="guide-meta">5 min read</span>
     </a>
   </div>
+  </main>
 
   <footer>
-    <p>Built for vibe coders everywhere</p>
+    <p>For builders who'd rather ship than manage infrastructure</p>
   </footer>
 </body>
 </html>
