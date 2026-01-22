@@ -3,34 +3,84 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>itsalive.co - Go from Vibe to Live in 10 seconds flat</title>
-  <meta name="description" content="Everything you need to ship your Claude Code project - auth, database, and hosting in one command.">
+  <title>itsalive.co - Ship It. Don't Wire It.</title>
+  <meta name="description" content="Your prototype works. Now take it live without becoming the ops team. Auth, database, hosting, email, AI — all wired up. One command to deploy.">
+  <meta name="robots" content="index, follow">
+  <meta name="theme-color" content="#0a0a0b">
+  <link rel="canonical" href="https://itsalive.co/">
+
+  <!-- Favicon -->
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 
   <!-- OpenGraph -->
   <meta property="og:type" content="website">
-  <meta property="og:url" content="https://itsalive.co">
-  <meta property="og:title" content="It's Alive! - Go from Vibe to Live in 10 seconds flat">
-  <meta property="og:description" content="Everything you need to ship your Claude Code project - auth, database, and hosting in one command.">
+  <meta property="og:url" content="https://itsalive.co/">
+  <meta property="og:title" content="itsalive.co - Ship It. Don't Wire It.">
+  <meta property="og:description" content="Your prototype works. Now take it live without becoming the ops team. Auth, database, hosting, email, AI — all wired up. One command to deploy.">
   <meta property="og:image" content="https://itsalive.co/og-image.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:site_name" content="itsalive.co">
+  <meta property="og:locale" content="en_US">
 
   <!-- Twitter -->
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:url" content="https://itsalive.co">
-  <meta name="twitter:title" content="It's Alive! - Go from Vibe to Live in 10 seconds flat">
-  <meta name="twitter:description" content="Everything you need to ship your Claude Code project - auth, database, and hosting in one command.">
+  <meta name="twitter:site" content="@TheAliveCo">
+  <meta name="twitter:title" content="itsalive.co - Ship It. Don't Wire It.">
+  <meta name="twitter:description" content="Your prototype works. Now take it live without becoming the ops team. Auth, database, hosting, email, AI — all wired up. One command to deploy.">
   <meta name="twitter:image" content="https://itsalive.co/og-image.png">
+
+  <!-- Structured Data -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "itsalive.co",
+    "applicationCategory": "DeveloperApplication",
+    "operatingSystem": "Web",
+    "description": "Deploy your Claude Code projects with auth, database, hosting, email, and AI built in. One command to go live.",
+    "url": "https://itsalive.co",
+    "offers": [
+      {
+        "@type": "Offer",
+        "name": "Free",
+        "price": "0",
+        "priceCurrency": "USD",
+        "description": "Up to 10 sites, auth, database, hosting, basic analytics"
+      },
+      {
+        "@type": "Offer",
+        "name": "Pro",
+        "price": "50",
+        "priceCurrency": "USD",
+        "priceSpecification": {
+          "@type": "UnitPriceSpecification",
+          "price": "50",
+          "priceCurrency": "USD",
+          "billingDuration": "P1Y",
+          "unitText": "per site"
+        },
+        "description": "Custom domain, staging environment, priority support"
+      }
+    ]
+  }
+  </script>
+
   <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
-  <nav>
-    <a href="/" class="nav-logo">itsalive.co</a>
-    <div class="nav-links">
-      <a href="/how-it-works/">How it Works</a>
-      <a href="/guides/">Guides</a>
-      <a href="/support/">Support</a>
-      <a href="https://itsalive.co/dashboard" class="nav-btn">Login</a>
-    </div>
-  </nav>
+  <header>
+    <nav aria-label="Main navigation">
+      <a href="/" class="nav-logo" aria-label="itsalive.co home">itsalive.co</a>
+      <div class="nav-links">
+        <a href="/how-it-works/">How it Works</a>
+        <a href="/guides/">Guides</a>
+        <a href="/support/">Support</a>
+        <a href="https://itsalive.co/dashboard" class="nav-btn">Login</a>
+      </div>
+    </nav>
+  </header>
+  <main>
 
   <section class="hero" style="padding-top:5rem;">
     <div class="terminal">
@@ -114,12 +164,12 @@
       </script>
     </div>
     <div class="hero-content">
-      <h1>It's Alive!</h1>
-      <p class="tagline">Go from Vibe to Live in 10 seconds flat.</p>
-      <p class="description">Auth, database, AI, email, file uploads - everything just works. No API keys. No billing accounts. No configuration. We handle all of it.</p>
-      <button class="cta" onclick="navigator.clipboard.writeText('npx itsalive-co')">
+      <h1>Ship It.<br>Don't Wire It.</h1>
+      <p class="tagline">Your prototype works. Now take it live without becoming the ops team.</p>
+      <p class="description">Auth, database, hosting, email, AI — all wired up and ready. One command to go from "it works on my machine" to live for your audience.</p>
+      <button class="cta" onclick="navigator.clipboard.writeText('npx itsalive-co')" aria-label="Copy npx itsalive-co to clipboard">
         <span>npx itsalive-co</span>
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
           <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
           <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
         </svg>
@@ -129,65 +179,65 @@
   </section>
 
   <section class="features">
-    <h2>Everything You Need, Built In</h2>
-    <p class="subtitle">Vibe coding superpowers for Claude Code. No more juggling services, API keys, or billing accounts. Just build.</p>
+    <h2>The Infrastructure You'd Have to Wire Yourself</h2>
+    <p class="subtitle">Every feature that slows you down after the prototype — already handled. No accounts to create. No keys to manage. No bills to reconcile.</p>
     <div class="features-grid">
       <div class="feature">
         <div class="feature-icon">🔐</div>
         <h3>Auth</h3>
-        <p>Magic link login for your users. Zero config.</p>
+        <p>Magic link login. No Auth0 account, no OAuth dance, no session headaches.</p>
       </div>
       <div class="feature">
         <div class="feature-icon">💾</div>
         <h3>Database</h3>
-        <p>Store and query data with simple API calls.</p>
+        <p>Store and query data. No Supabase project, no connection strings, no migrations.</p>
       </div>
       <div class="feature">
         <div class="feature-icon">📁</div>
         <h3>File Uploads</h3>
-        <p>Let users upload images and files. Stored and served from the edge.</p>
+        <p>Users upload files, you get URLs. No S3 bucket, no CORS config, no CDN setup.</p>
       </div>
       <div class="feature">
         <div class="feature-icon">🤖</div>
         <h3>AI</h3>
-        <p>Claude & GPT built in. Just call the API, we handle billing.</p>
+        <p>Claude & GPT ready to call. No API keys, no rate limits to manage, no surprise bills.</p>
       </div>
       <div class="feature">
         <div class="feature-icon">📧</div>
         <h3>Email</h3>
-        <p>Send emails from your app. No Sendgrid account needed.</p>
+        <p>Send from your app. No Sendgrid, no domain verification, no deliverability rabbit holes.</p>
       </div>
       <div class="feature">
         <div class="feature-icon">📊</div>
         <h3>Analytics</h3>
-        <p>See visitors, API usage, and more in your dashboard.</p>
+        <p>See who's using what. No Google Analytics, no privacy policies, no cookie banners.</p>
       </div>
       <div class="feature">
         <div class="feature-icon">⚡</div>
         <h3>Edge Hosting</h3>
-        <p>Deployed globally on Cloudflare. Fast everywhere.</p>
+        <p>Deployed globally on Cloudflare. No Vercel config, no build pipelines, no deploy scripts.</p>
       </div>
       <div class="feature">
         <div class="feature-icon">⏰</div>
         <h3>Cron Jobs</h3>
-        <p>Schedule tasks to run on any interval. Background jobs made easy.</p>
+        <p>Schedule background tasks. No Lambda functions, no CloudWatch, no infrastructure to monitor.</p>
       </div>
       <div class="feature">
         <div class="feature-icon">💳</div>
         <h3>Payments</h3>
-        <p>Collect payments and subscriptions. E-commerce ready out of the box.</p>
+        <p>Collect money from day one. No Stripe dashboard, no webhook endpoints, no test mode confusion.</p>
       </div>
     </div>
   </section>
 
   <section class="pricing">
     <h2>Simple Pricing</h2>
-    <p class="subtitle">Start free, upgrade when you need more</p>
+    <p class="subtitle">No billing accounts to juggle. One bill, everything included.</p>
     <div class="pricing-grid">
       <div class="plan">
         <div class="plan-name">Free</div>
         <div class="plan-price">$0</div>
-        <p class="plan-desc">Perfect for side projects and experiments</p>
+        <p class="plan-desc">Validate your idea before committing anything</p>
         <ul class="plan-features">
           <li>Up to 10 sites</li>
           <li>Auth, database, hosting</li>
@@ -196,12 +246,12 @@
           <li>AI: pay per use</li>
           <li>10,000 visitors/month</li>
         </ul>
-        <button class="plan-cta secondary" onclick="navigator.clipboard.writeText('npx itsalive-co')">Get Started Free</button>
+        <button class="plan-cta secondary" onclick="navigator.clipboard.writeText('npx itsalive-co')" aria-label="Copy install command and get started free">Get Started Free</button>
       </div>
       <div class="plan featured">
         <div class="plan-name">Pro</div>
         <div class="plan-price">$50<span>/year per site</span></div>
-        <p class="plan-desc">For apps that are ready for the real world</p>
+        <p class="plan-desc">Your app has users — time to look legit</p>
         <ul class="plan-features">
           <li>Custom domain</li>
           <li>Staging environment</li>
@@ -215,7 +265,7 @@
       <div class="plan">
         <div class="plan-name">Studio</div>
         <div class="plan-price">$500<span>/year</span></div>
-        <p class="plan-desc">For agencies and studios shipping client work</p>
+        <p class="plan-desc">Ship client projects without becoming their DevOps</p>
         <ul class="plan-features">
           <li>Up to 100 sites</li>
           <li>White-label subdomain (*.yourstudio.com)</li>
@@ -228,9 +278,10 @@
       </div>
     </div>
   </section>
+  </main>
 
   <footer>
-    <p>Built for vibe coders everywhere</p>
+    <p>For builders who'd rather ship than manage infrastructure</p>
   </footer>
 </body>
 </html>
